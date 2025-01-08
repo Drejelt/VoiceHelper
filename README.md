@@ -1,1 +1,5 @@
-# VoiceHelper
+vosk-model-small-ru-0.22 = https://alphacephei.com/vosk/models
+
+
+
+pip install pyaudio vosk spacy dateparser webrtcvad Wikipedia-API==0.3.2 colorama beautifulsoup4 googletrans pyjokes python-dotenv requests
