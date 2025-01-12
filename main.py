@@ -192,17 +192,17 @@ async def handle_command(command, cities, money, time_alarm):
         elif command == "будильник" and time_alarm:
             threading.Thread(target=start_alarm_thread, args=(time_alarm,), daemon=True).start()
         elif command == "ютуб":
-            open_youtube()
+            open_enum_url(Urls.YOUTUBE)
         elif command == "аниме":
-            open_random_anime()
+            open_enum_url(Urls.RANDOM_ANIME)
         elif command == "новости":
-            bbc_news_open()
+            open_enum_url(Urls.BBC_NEWS)
         elif command == "музыку":
-            open_lofi_hip_hop_music()
+            open_enum_url(Urls.LOFI_HIP_HOP)
         elif command == "хитрая_музыка":
-            tricky_music()
+            open_enum_url(Urls.TRICKY_MUSIC)
         elif command == "чипи":
-            chipi_chipi()
+            open_enum_url(Urls.CHIPI_CHIPI)
         elif command == "википедия":
             for topic in cities:
                 result = search_for_definition(topic, "ru")  # Используем русский язык
