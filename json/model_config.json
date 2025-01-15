@@ -1,0 +1,8 @@
+{
+  "MODEL_PATH": "model/vosk-model-small-ru-0.22",
+  "AI_NAME": "шут",
+  "SAMPLE_RATE": 16000,
+  "BUFFER_SIZE": 4000,
+  "FRAME_DURATION_MS": 20,
+  "VAD_MODE": 3
+}
