@@ -10,7 +10,7 @@ class Urls(enum.Enum):
     BBC_NEWS = 'https://www.bbc.com/'
     CHIPI_CHIPI = 'https://www.youtube.com/watch?v=0tOXxuLcaog?autoplay=1'
     TRICKY_MUSIC = 'https://www.youtube.com/watch?v=vmaQFkWv8Gc?autoplay=1'
-    CONTROL_PANEL = 'http://127.0.0.1:8000/docs'
+    CONTROL_PANEL = 'http://127.0.0.1:8000/'
 
 def open_url(url):
     webbrowser.open_new_tab(url)

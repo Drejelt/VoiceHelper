@@ -13,7 +13,7 @@
     Добавлена веб-панель управления с дашбордами (частично; веб-панель есть, но пока её функционал ограничен только редактированием JSON конфигурации).
     Проведен рефакторинг кода, попытался привести его в читаемый вид.
     Доработан jokes_module.py (теперь он получает шутки с API, а если доступа нет, — с PyJokes).
-    Доработан exchange_rates.py (Теперь он берёт данные с API, а если доступа нет - с Google )
+    Доработан exchange_rates.py (Теперь он берёт данные с API, а если доступа нет - с Google)
 
 Что не сделано:
 
@@ -26,13 +26,13 @@
     Вывод логов напрямую в панель управления (без возможности их изменять).
     Отправка логов через Telegram API.
     Вывод панели управления в сеть с помощью ngrok и команды в Telegram с последующей отправкой ссылки.
-    Привести в порядок панель управления, сделать переадресацию с 127.0.0.1:8080 на 127.0.0.1:8000/docs, добавить авторизацию или WhiteList.
+    Привести в порядок панель управления, сделать переадресацию с 127.0.0.1:8080 на 127.0.0.1:8000/docs, добавить авторизацию и/или WhiteList.
     Добавить возможность поиска видео на YouTube, расширить вариативность новостных сайтов, возможно, добавить поиск музыки и её воспроизведение без открытия YouTube в браузере (только звук).
     Начать определение валюты/времени в зависимости от местоположения пользователя (есть два варианта: 1. указывать в JSON файле, 2. определять по IP-адресу).
 
 """
 
-import json, pyaudio, vosk, spacy, asyncio, threading, re, dateparser, webrtcvad, pyttsx3, sys
+import json, pyaudio, vosk, spacy, asyncio, threading, re, dateparser, webrtcvad, pyttsx3
 
 from functional_modules.weather import call_weather_api
 from functional_modules.dictionary_declensions import dictionary_declensions
@@ -179,7 +179,7 @@ class VoiceAssistant:
         self.command_processor = CommandProcessor(self.config)
         
         self.tts_engine = pyttsx3.init()
-        self.tts_engine.setProperty('rate', 150)
+        self.tts_engine.setProperty('rate', 170)
         self.tts_engine.setProperty('voice', 'russian')
 
     def reload_config(self):
@@ -191,9 +191,18 @@ class VoiceAssistant:
 
     async def process_audio(self):
         while True:
-            data = self.stream.read(self.config["BUFFER_SIZE"], exception_on_overflow=False)
-            if self.rec.AcceptWaveform(data):
-                yield json.loads(self.rec.Result()).get("text", "")
+            if not self.stream.is_active():  # Проверяем, активен ли поток
+                logging.warning("Попытка чтения остановленного потока. Пропуск итерации.")
+                await asyncio.sleep(0.1)  # Небольшая задержка перед повторной проверкой
+                continue
+
+            try:
+                data = self.stream.read(self.config["BUFFER_SIZE"], exception_on_overflow=False)
+                if self.rec.AcceptWaveform(data):
+                    yield json.loads(self.rec.Result()).get("text", "")
+            except OSError as e:
+                logging.error(f"Ошибка аудиопотока: {e}")
+                await asyncio.sleep(0.1)  # Небольшая задержка для восстановления потока
 
     async def process_audio_stream(self):
         async for text in self.process_audio():
@@ -208,9 +217,18 @@ class VoiceAssistant:
             return self.command_processor.extract_entities(standardized_text)
         return None, None, None, None, None
 
+    def resume_stream(self):
+        if not self.stream.is_active():
+            self.stream.start_stream()
+            logging.info("Аудиопоток возобновлён.")
+
     async def handle_command(self, command, cities, money, time_alarm):
         try:
+            # Приостановка аудио-потока для предотвращения конфликтов
+            self.stream.stop_stream()
+            self.is_speaking = True
             response = None
+
             if command == "погода" and cities:
                 for city in cities:
                     response = call_weather_api(city)
@@ -267,18 +285,24 @@ class VoiceAssistant:
         except ConnectionError as e:
             error_msg = f"Ошибка сети при обработке команды: {e}"
             logging.error(error_msg)
-            self.tts_engine.say(error_msg)
+            self.tts_engine.connect('finished-utterance', lambda name, completed: self.resume_stream())
             self.tts_engine.runAndWait()
         except ValueError as e:
             error_msg = f"Ошибка ввода при обработке команды: {e}"
             logging.error(error_msg)
-            self.tts_engine.say(error_msg)
+            self.tts_engine.connect('finished-utterance', lambda name, completed: self.resume_stream())
             self.tts_engine.runAndWait()
         except Exception as e:
             error_msg = f"Неожиданная ошибка при обработке команды: {e}"
             logging.error(error_msg)
-            self.tts_engine.say(error_msg)
+            self.tts_engine.connect('finished-utterance', lambda name, completed: self.resume_stream())
             self.tts_engine.runAndWait()
+        finally:
+            self.resume_stream()
+            self.is_speaking = False
+            logging.info("Завершение обработки команды.")
 
     def run(self):
         asyncio.run(self.process_audio_stream())
+
+

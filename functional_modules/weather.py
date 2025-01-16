@@ -30,6 +30,6 @@ def call_weather_api(city_name):
     weather_module = WeatherModule(api_key)
     weather = weather_module.get_weather(city_name)
     if weather:
-        return (f"Температура на улице: {weather['temperature']}°C, {weather['weather']}, скорость ветра составляет: {weather['wind_speed']} м/с")
+        return (f"Температура на улице: {weather['temperature']} градусов цельсия, {weather['weather']}, скорость ветра составляет: {weather['wind_speed']} метров")
     else:
         return ("Не удалось получить данные о погоде.")
