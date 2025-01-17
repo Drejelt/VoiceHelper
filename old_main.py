@@ -32,32 +32,17 @@
 
 """
 
-import asyncio
-import io
-import json
-import re
-import threading
-
-from bs4 import BeautifulSoup
-import dateparser
-from gtts import gTTS
-import pygame
-import pyaudio
-import pyttsx3
+import json, pyaudio, vosk, spacy, asyncio, threading, re, dateparser, webrtcvad, pyttsx3
 import requests
-import spacy
-import vosk
-import webrtcvad
+from bs4 import BeautifulSoup
 
-from functional_modules.alarm_clock import get_current_time, start_alarm_thread
-from functional_modules.dictionary_declensions import dictionary_declensions
-from functional_modules.exchange_rates import currency_list, get_money_info
-from functional_modules.jokes_module import programmer_joke
-import functional_modules.logger_config
 from functional_modules.weather import call_weather_api
+from functional_modules.dictionary_declensions import dictionary_declensions
+from functional_modules.jokes_module import programmer_joke
+from functional_modules.exchange_rates import get_money_info, currency_list
+from functional_modules.alarm_clock import start_alarm_thread, get_current_time
 from functional_modules.webbrowser_module import *
-from functional_modules.keyboard_shortcuts import *
-from functional_modules.fairytale_generator import generate_fairytale
+import functional_modules.logger_config
 
 class AudioProcessor:
     def __init__(self, sample_rate, buffer_size):
@@ -160,9 +145,6 @@ class CommandProcessor:
             "панель_управления": lambda t: "управления" in t and any(kw in t for kw in ["открой", "включи"]),
             "пора_спать": lambda t: "отключись" in t and any(kw in t for kw in ["отключись", "выключись"]),
             "открой": lambda t: "открой" in t or "найди" in t,
-            "сказка": lambda t: "сказку" in t or "историю" in t,
-            "закрой_вкладку": lambda t: "закрой" in t and "вкладку" in t,
-            "закрой_окно": lambda t: "закрой" in t and "вкладку" in t,
         }
 
         for cmd, condition in commands.items():
@@ -203,12 +185,8 @@ class VoiceAssistant:
 
         self.command_processor = CommandProcessor(self.config)
 
-        # Инициализация pygame для воспроизведения аудио
-        pygame.mixer.init()
-        
-        # Fallback TTS движок
         self.tts_engine = pyttsx3.init()
-        self.tts_engine.setProperty('rate', 180)
+        self.tts_engine.setProperty('rate', 170)
         self.tts_engine.setProperty('voice', 'russian')
 
     def reload_config(self):
@@ -251,26 +229,6 @@ class VoiceAssistant:
             self.stream.start_stream()
             logging.info("Аудиопоток возобновлён.")
 
-    def speak(self, text):
-        try:
-            # Пробуем использовать gTTS
-            tts = gTTS(text=text, lang='ru')
-            fp = io.BytesIO()
-            tts.write_to_fp(fp)
-            fp.seek(0)
-            
-            # Воспроизводим с помощью pygame
-            pygame.mixer.music.load(fp)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(10)
-                
-        except Exception as e:
-            logging.error(f"Ошибка gTTS: {e}. Использую резервный движок.")
-            # Используем резервный движок если gTTS недоступен
-            self.tts_engine.say(text)
-            self.tts_engine.runAndWait()
-
     async def handle_command(self, command, cities, money, time_alarm):
         try:
             # Приостановка аудио-потока для предотвращения конфликтов
@@ -301,11 +259,11 @@ class VoiceAssistant:
                 open_enum_url(Urls.BBC_NEWS)
                 logging.info(response)
             elif command == "музыку":
-                response = "музыка включена"
+                response = "Включаю музыку"
                 open_enum_url(Urls.LOFI_HIP_HOP)
                 logging.info(response)
             elif command == "хитрая_музыка":
-                response = "хитрая музыка включена"
+                response = "Включаю хитрую музыку"
                 open_enum_url(Urls.TRICKY_MUSIC)
                 logging.info(response)
             elif command == "чипи":
@@ -325,17 +283,6 @@ class VoiceAssistant:
             elif command == "панель_управления":
                 response = "Включаю панель управления"
                 open_enum_url(Urls.CONTROL_PANEL)
-                logging.info(response)
-            elif command == "сказка":
-                response = generate_fairytale()
-                logging.info(response)
-            elif command == "закрой_вкладку":
-                response = "Выполняю"
-                tab_close()
-                logging.info(response)
-            elif command == "закрой_окно":
-                response = "Выполняю"
-                window_close()
                 logging.info(response)
             elif command == "открой":
                 if cities:
@@ -360,20 +307,24 @@ class VoiceAssistant:
                     logging.info(response)
 
             if response:
-                self.speak(response)
+                self.tts_engine.say(response)
+                self.tts_engine.runAndWait()
 
         except ConnectionError as e:
             error_msg = f"Ошибка сети при обработке команды: {e}"
             logging.error(error_msg)
-            self.speak(error_msg)
+            self.tts_engine.connect('finished-utterance', lambda name, completed: self.resume_stream())
+            self.tts_engine.runAndWait()
         except ValueError as e:
             error_msg = f"Ошибка ввода при обработке команды: {e}"
             logging.error(error_msg)
-            self.speak(error_msg)
+            self.tts_engine.connect('finished-utterance', lambda name, completed: self.resume_stream())
+            self.tts_engine.runAndWait()
         except Exception as e:
             error_msg = f"Неожиданная ошибка при обработке команды: {e}"
             logging.error(error_msg)
-            self.speak(error_msg)
+            self.tts_engine.connect('finished-utterance', lambda name, completed: self.resume_stream())
+            self.tts_engine.runAndWait()
         finally:
             self.resume_stream()
             self.is_speaking = False
@@ -381,6 +332,5 @@ class VoiceAssistant:
 
     def run(self):
         asyncio.run(self.process_audio_stream())
-
 
 

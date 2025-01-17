@@ -1,19 +1,21 @@
 import logging, webbrowser, wikipediaapi, enum
-
-# Настройка логирования
-logging.getLogger("wikipediaapi").setLevel(logging.WARNING)
+import time
+import pyautogui
 
 class Urls(enum.Enum):
-    LOFI_HIP_HOP = 'https://www.youtube.com/watch?v=jfKfPfyJRdk&list=PL6NdkXsPL07Il2hEQGcLI4dg_LTg7xA2L?autoplay=1'
+    LOFI_HIP_HOP = 'https://www.youtube.com/watch?v=jfKfPfyJRdk&list=PL6NdkXsPL07Il2hEQGcLI4dg_LTg7xA2L&autoplay=1'
     RANDOM_ANIME = 'https://www.anilibria.tv/public/random.php'
     YOUTUBE = 'https://www.youtube.com/'
     BBC_NEWS = 'https://www.bbc.com/'
-    CHIPI_CHIPI = 'https://www.youtube.com/watch?v=0tOXxuLcaog?autoplay=1'
-    TRICKY_MUSIC = 'https://www.youtube.com/watch?v=vmaQFkWv8Gc?autoplay=1'
+    CHIPI_CHIPI = 'https://www.youtube.com/watch?v=0tOXxuLcaog&autoplay=1'
+    TRICKY_MUSIC = 'https://www.youtube.com/watch?v=vmaQFkWv8Gc&autoplay=1'
     CONTROL_PANEL = 'http://127.0.0.1:8000/'
 
 def open_url(url):
     webbrowser.open_new_tab(url)
+    if 'youtube.com' in url:
+        time.sleep(8)
+        pyautogui.press('space')
 
 def open_enum_url(url_enum: Urls):
     open_url(url_enum.value)
