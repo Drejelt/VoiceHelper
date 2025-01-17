@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 
-import time, dateparser, subprocess, shlex
+import time
+import dateparser
 from datetime import datetime, timedelta
+import pygame
+import os
 from colorama import Fore, Style
+import logging
+
+# Инициализация pygame для воспроизведения звука
+pygame.mixer.init()
 
 def get_current_time():
     current_time = datetime.now()
@@ -32,19 +39,25 @@ def start_alarm(alarm_time):
     """
     Запускаю обратный отсчет будильника и оповещаю, когда наступит время.
     """
-    def send_notification():
-        command = 'notify-send "Будильник" "Пора вставать!"'
-        try:
-            subprocess.run(shlex.split(command), check=True)
-        except (subprocess.CalledProcessError, OSError) as e:
-            print(f"{Fore.RED}Ошибка при отправке уведомления:{Style.RESET_ALL} {str(e)}")
+    # Путь к звуковому файлу будильника (относительно корня проекта)
+    alarm_sound_path = os.path.join("sounds", "alarm.mp3")
+    
+    try:
+        pygame.mixer.music.load(alarm_sound_path)
+    except pygame.error:
+        print(f"{Fore.RED}Ошибка:{Style.RESET_ALL} не удалось загрузить звук будильника")
+        return
 
-    # Дожидаюсь времени будильника
     while True:
         now = datetime.now()
         if now >= alarm_time:
-            send_notification()
             print(f"{Fore.YELLOW}Будильник сработал!{Style.RESET_ALL}")
+            # Воспроизводим звук 3 раза
+            for _ in range(3):
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    pygame.time.Clock().tick(10)
+                time.sleep(1)
             break
         time.sleep(30)  # Проверка каждые 30 секунд
 
@@ -60,6 +73,10 @@ def start_alarm_thread(alarm_time):
     """
     Отдельный поток для запуска будильника.
     """
-    alarm_time = set_alarm(alarm_time)
-    if alarm_time:
-        start_alarm(alarm_time)
+    logging.info(f"Попытка установки будильника на {alarm_time}")
+    alarm_datetime = set_alarm(alarm_time)
+    if alarm_datetime:
+        logging.info(f"Будильник успешно установлен на {alarm_datetime}")
+        start_alarm(alarm_datetime)
+    else:
+        logging.error("Не удалось установить будильник")

@@ -70,20 +70,25 @@ class VoiceAssistantAPI:
 
     async def get_config(self, credentials: HTTPBasicCredentials = Depends(HTTPBasic())):
         self.verify_credentials(credentials)
-        return Config(**VoiceAssistant.config)
+        config = self.load_config()
+        return Config(**config)
 
     async def update_config(self, updated_config: Config, credentials: HTTPBasicCredentials = Depends(HTTPBasic())):
         self.verify_credentials(credentials)
-        VoiceAssistant.config = updated_config.dict()
-        VoiceAssistant.reload_config()
+        config_dict = updated_config.dict()
+        self.save_config(config_dict)
+        
+        if hasattr(self, 'voice_assistant'):
+            self.voice_assistant.reload_config()
+        
         logging.info("Конфигурация успешно обновлена.")
         return {"INFO": "Конфигурация успешно обновлена."}
 
     async def startup_event(self):
         logging.info("FastAPI приложение успешно запущено.")
         try:
-            voice_assistant = VoiceAssistant()
-            self.assistant_thread = threading.Thread(target=voice_assistant.start_voice_assistant, daemon=True)
+            self.voice_assistant = VoiceAssistant()
+            self.assistant_thread = threading.Thread(target=self.voice_assistant.start_voice_assistant, daemon=True)
             self.assistant_thread.start()
         except Exception as e:
             logging.error(f"Ошибка при запуске голосового помощника: {e}")

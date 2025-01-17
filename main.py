@@ -1,42 +1,9 @@
-"""
-На данный момент (01.15.2025, М.Д.Г.) проект не завершён. В планах:
-
-    Разобраться с .env файлом.
-    Возможно, дообучить модель Vosk (или использовать более мощную).
-    Добавить дополнительные возможности (возможно, с использованием нейросетей).
-    Доработать webbrowser_module.py.
-
-Из того, что сделано хотя бы частично с предыдущего коммита:
-
-    Добавлена озвучка (нужно поиграться со скоростью, но в принципе работает).
-    Перенос конфигурации в отдельные файлы (конфигурация модели теперь хранится в JSON, и её можно редактировать через сайт).
-    Добавлена веб-панель управления с дашбордами (частично; веб-панель есть, но пока её функционал ограничен только редактированием JSON конфигурации).
-    Проведен рефакторинг кода, попытался привести его в читаемый вид.
-    Доработан jokes_module.py (теперь он получает шутки с API, а если доступа нет, — с PyJokes).
-    Доработан exchange_rates.py (Теперь он берёт данные с API, а если доступа нет - с Google)
-
-Что не сделано:
-
-    Не придумал функционала, который можно реализовать с нейросетями.
-    webbrowser_module был слегка изменён, но он продолжит изменяться.
-    Я не разобрался с .env файлом, и он пока лежит в functional_modules, потому что не хочу жёстко прописывать путь.
-
-Что в планах:
-
-    Вывод логов напрямую в панель управления (без возможности их изменять).
-    Отправка логов через Telegram API.
-    Вывод панели управления в сеть с помощью ngrok и команды в Telegram с последующей отправкой ссылки.
-    Привести в порядок панель управления, сделать переадресацию с 127.0.0.1:8080 на 127.0.0.1:8000/docs, добавить авторизацию и/или WhiteList.
-    Добавить возможность поиска видео на YouTube, расширить вариативность новостных сайтов, возможно, добавить поиск музыки и её воспроизведение без открытия YouTube в браузере (только звук).
-    Начать определение валюты/времени в зависимости от местоположения пользователя (есть два варианта: 1. указывать в JSON файле, 2. определять по IP-адресу).
-
-"""
-
 import asyncio
 import io
 import json
 import re
 import threading
+from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
 import dateparser
@@ -158,11 +125,12 @@ class CommandProcessor:
             "время": lambda t: "время" in t or "времени" in t,
             "википедия": lambda t: "википедия" in t or "что такое" in t,
             "панель_управления": lambda t: "управления" in t and any(kw in t for kw in ["открой", "включи"]),
-            "пора_спать": lambda t: "отключись" in t and any(kw in t for kw in ["отключись", "выключись"]),
+            "пора_спать": lambda t: "отключись" in t or "выключись" in t,
             "открой": lambda t: "открой" in t or "найди" in t,
             "сказка": lambda t: "сказку" in t or "историю" in t,
             "закрой_вкладку": lambda t: "закрой" in t and "вкладку" in t,
             "закрой_окно": lambda t: "закрой" in t and "вкладку" in t,
+            "найди_видео": lambda t: "найди" in t and "видео" in t,
         }
 
         for cmd, condition in commands.items():
@@ -179,10 +147,83 @@ class CommandProcessor:
         return re.sub(rf"\b({self.config['AI_NAME']}|определи|википедия|что такое)\b", "", text, flags=re.IGNORECASE).strip()
 
     def parse_time_from_text(self, text):
-        text = re.sub(r"\b({self.config['AI_NAME']}|поставь|будильник|на|определи|википедия|что такое)\b", "", text, flags=re.IGNORECASE).strip()
+        # Удаляем лишние слова
+        text = re.sub(
+            rf"\b({self.config['AI_NAME']}|поставь|будильник|на|установи)\b",
+            "",
+            text,
+            flags=re.IGNORECASE
+        ).strip()
+
+        
         try:
-            parsed_date = dateparser.parse(text, settings={'PREFER_DATES_FROM': 'future'})
-            return parsed_date.strftime("%H:%M") if parsed_date else None
+            # Словарь для преобразования словесного времени в числа
+            time_words = {
+                'один': '1', 'одну': '1', 'первого': '1',
+                'два': '2', 'две': '2', 'второго': '2',
+                'три': '3', 'третьего': '3',
+                'четыре': '4', 'четвертого': '4',
+                'пять': '5', 'пятого': '5',
+                'шесть': '6', 'шестого': '6',
+                'семь': '7', 'седьмого': '7',
+                'восемь': '8', 'восьмого': '8',
+                'девять': '9', 'девятого': '9',
+                'десять': '10', 'десятого': '10',
+                'одиннадцать': '11', 'одиннадцатого': '11',
+                'двенадцать': '12', 'двенадцатого': '12'
+            }
+            
+            # Заменяем словесные числа на цифры
+            for word, number in time_words.items():
+                text = re.sub(rf'\b{word}\b', number, text, flags=re.IGNORECASE)
+            
+            # Пытаемся найти время в разных форматах
+            patterns = [
+                r'(\d{1,2})(?:\s*)?(?::|часов|час|часа)?(?:\s*)?(\d{2})?(?:\s*)?(?:утра|вечера|дня)?',
+                r'(\d{1,2})(?:\s*)?(?:утра|вечера|дня)',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, text)
+                if match:
+                    hours = int(match.group(1))
+                    minutes = int(match.group(2)) if match.group(2) else 0
+                    
+                    # Обработка времени с учетом периода дня
+                    if 'вечера' in text.lower() and hours < 12:
+                        hours += 12
+                    elif 'утра' in text.lower() and hours == 12:
+                        hours = 0
+                    
+                    now = datetime.now()
+                    alarm_time = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+                    
+                    # Если время уже прошло, добавляем день
+                    if alarm_time <= now:
+                        alarm_time += timedelta(days=1)
+                    
+                    result_time = alarm_time.strftime("%H:%M")
+                    return result_time
+            
+            # Если не удалось распарсить через регулярки, пробуем dateparser
+            parsed_date = dateparser.parse(
+                text,
+                languages=['ru'],
+                settings={'PREFER_DATES_FROM': 'future'}
+            )
+            
+            if parsed_date:
+                now = datetime.now()
+                if parsed_date < now:
+                    parsed_date += timedelta(days=1)
+                
+                result_time = parsed_date.strftime("%H:%M")
+                logging.info(f"Успешно распарсено время через dateparser: {result_time}")
+                return result_time
+                
+            logging.error(f"Не удалось распарсить время из текста: {text}")
+            return None
+                
         except Exception as e:
             logging.error(f"Ошибка парсинга времени: {e}")
             return None
@@ -235,9 +276,9 @@ class VoiceAssistant:
 
     async def process_audio_stream(self):
         async for text in self.process_audio():
-            command, cities, money, _, time_alarm = await self.recognize_speech(text)
+            command, cities, money, original_text, time_alarm = await self.recognize_speech(text)
             if command:
-                await self.handle_command(command, cities, money, time_alarm)
+                await self.handle_command(command, cities, money, time_alarm, original_text)
 
     async def recognize_speech(self, text):
         if text:
@@ -271,14 +312,28 @@ class VoiceAssistant:
             self.tts_engine.say(text)
             self.tts_engine.runAndWait()
 
-    async def handle_command(self, command, cities, money, time_alarm):
+    async def handle_command(self, command, cities, money, time_alarm, text):
         try:
-            # Приостановка аудио-потока для предотвращения конфликтов
             self.stream.stop_stream()
             self.is_speaking = True
             response = None
 
-            if command == "погода" and cities:
+            if command == "будильник":
+                parsed_time = self.command_processor.parse_time_from_text(text)
+                
+                if parsed_time:
+                    alarm_thread = threading.Thread(
+                        target=start_alarm_thread,
+                        args=(parsed_time,),
+                        daemon=True
+                    )
+                    alarm_thread.start()
+                    response = f"Будильник установлен на {parsed_time}"
+                else:
+                    response = "Извините, не удалось распознать время для будильника"
+                logging.info(f"Установка будильника: {response}")
+
+            elif command == "погода" and cities:
                 for city in cities:
                     response = call_weather_api(city)
                     logging.info(f"{response}")
@@ -318,10 +373,6 @@ class VoiceAssistant:
             elif command == 'время':
                 response = get_current_time()
                 logging.info(f"{response}")
-            elif command == "будильник" and time_alarm:
-                response = f"Будильник установлен на {time_alarm}"
-                threading.Thread(target=start_alarm_thread, args=(time_alarm,), daemon=True).start()
-                logging.info(response)
             elif command == "панель_управления":
                 response = "Включаю панель управления"
                 open_enum_url(Urls.CONTROL_PANEL)
@@ -337,6 +388,20 @@ class VoiceAssistant:
                 response = "Выполняю"
                 window_close()
                 logging.info(response)
+            elif command == "найди_видео":
+                search_text = re.sub(
+                    rf"\b({self.config['AI_NAME']}|найди|видео)\b", 
+                    "", 
+                    text, 
+                    flags=re.IGNORECASE
+                ).strip()
+                if search_text:
+                    response = f"Ищу видео по запросу: {search_text}"
+                    search_youtube(search_text)
+                    logging.info(response)
+                else:
+                    response = "Не удалось распознать поисковый запрос"
+                    logging.warning(response)
             elif command == "открой":
                 if cities:
                     query = " ".join(cities)
@@ -362,14 +427,6 @@ class VoiceAssistant:
             if response:
                 self.speak(response)
 
-        except ConnectionError as e:
-            error_msg = f"Ошибка сети при обработке команды: {e}"
-            logging.error(error_msg)
-            self.speak(error_msg)
-        except ValueError as e:
-            error_msg = f"Ошибка ввода при обработке команды: {e}"
-            logging.error(error_msg)
-            self.speak(error_msg)
         except Exception as e:
             error_msg = f"Неожиданная ошибка при обработке команды: {e}"
             logging.error(error_msg)

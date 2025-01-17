@@ -13,9 +13,15 @@ class Urls(enum.Enum):
 
 def open_url(url):
     webbrowser.open_new_tab(url)
-    if 'youtube.com' in url:
+    if 'youtube.com/watch?v=' in url:
         time.sleep(8)
         pyautogui.press('space')
+
+def search_youtube(query: str):
+    search_query = query.replace(' ', '+')
+    youtube_search_url = f"https://www.youtube.com/results?search_query={search_query}"
+    open_url(youtube_search_url)
+    return f"Выполняю поиск на YouTube: {query}"
 
 def open_enum_url(url_enum: Urls):
     open_url(url_enum.value)
@@ -32,3 +38,5 @@ def search_for_definition(query: str, language: str = "ru") -> str:
             webbrowser.open(google_search_url)
     except Exception as e:
         return f"Произошла ошибка при выполнении поиска: {str(e)}"
+
+

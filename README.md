@@ -1,5 +1,45 @@
-vosk-model-small-ru-0.22 = https://alphacephei.com/vosk/models
+# Голосовой Ассистент с Веб-Панелью Управления
 
-создаём папку model и распаковываем файлы из архива
+Голосовой ассистент на русском языке с веб-интерфейсом управления, способный выполнять различные команды и взаимодействовать с пользователем через голосовой ввод.
 
-pip install pyaudio vosk spacy dateparser webrtcvad Wikipedia-API==0.3.2 colorama beautifulsoup4 googletrans pyjokes python-dotenv requests fastapi uvicorn scikit-learn pyttsx3
+## Основные возможности
+
+- 🎤 Голосовое управление на русском языке
+- 🌐 Веб-панель управления с авторизацией
+- 🔊 Голосовой вывод (TTS) с резервным механизмом
+- 🌡️ Получение погоды для указанного города
+- 💰 Информация о курсах валют
+- 🎵 Управление музыкой и видео на YouTube
+- 📰 Доступ к новостям
+- ⏰ Установка будильника
+- 📚 Поиск определений в Википедии
+- 😄 Генерация шуток
+- 📖 Генерация сказок
+- 🔍 Поиск видео на YouTube
+- 🌐 Открытие веб-страниц по запросу
+
+## Требования
+
+- Python 3.8+
+- Установленные зависимости из requirements.txt
+- Модель Vosk для русского языка
+- Доступ к микрофону
+- Для работы генератора сказок и модуля погоды нужно взять взять соответствующие API ключи (GOOGLE GEMINI, OPEN WEATHER)
+
+## Установка
+
+1. Перед установкой зависимостей на Linux требуется установка системных пакетов:
+
+        sudo apt-get update
+        sudo apt-get install python3-dev portaudio19-dev python3-pyaudio
+2. Для работы с PyAudio на macOS:
+
+        brew install portaudio
+        pip install pyaudio
+3. Устанавливаем все зависимости:
+
+        pip install -r requirements.txt
+4. После установки необходимо скачать языковую модель spacy:
+
+        python -m spacy download ru_core_news_sm
+        
