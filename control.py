@@ -16,6 +16,7 @@ class Config(BaseModel):
     BUFFER_SIZE: int = 4000
     FRAME_DURATION_MS: int = 20
     VAD_MODE: int = 3
+    DEFAULT_CITY: str = "Днепр"
 
 class VoiceAssistantAPI:
     def __init__(self):

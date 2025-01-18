@@ -1,22 +1,21 @@
 import asyncio
 import io
 import json
-import re
-import threading
-from datetime import datetime, timedelta
 
-from bs4 import BeautifulSoup
-import dateparser
 from gtts import gTTS
 import pygame
 import pyaudio
 import pyttsx3
-import requests
+
 import spacy
 import vosk
 import webrtcvad
 
-from functional_modules.alarm_clock import get_current_time, start_alarm_thread
+from functional_modules.alarm_clock import (
+    get_current_time,
+    parse_time_from_text,
+    set_alarm
+)
 from functional_modules.dictionary_declensions import dictionary_declensions
 from functional_modules.exchange_rates import currency_list, get_money_info
 from functional_modules.jokes_module import programmer_joke
@@ -74,41 +73,31 @@ class CommandProcessor:
         self.nlp = spacy.load("ru_core_news_sm")
 
     def extract_entities(self, text):
-        doc = self.nlp(text)
-        cities, money, command, time_alarm = [], None, None, None
-
         if self.config["AI_NAME"].lower() not in text.lower():
             return None, None, None, None, None
 
-        cities, money = self._extract_entities_from_doc(doc)
-        command = self._determine_command(text)
-        time_alarm = self._extract_time_alarm(command, text)
-
-        if command == "википедия":
-            query = self._extract_wiki_query(text)
-            cities = [query] if query else []
-
-        if command == "открой":
-            text = re.sub(rf"\b({self.config['AI_NAME']}|найди|открой)\b", "", text, flags=re.IGNORECASE).strip()
-            cities = [text] if text else []
-
-        return command, cities, money, text, time_alarm
-
-    def _extract_entities_from_doc(self, doc):
-        cities = []
-        money = None
-        for ent in doc.ents:
-            if ent.label_ in ["GPE", "LOC"]:
-                cities.append(ent.text)
-            elif ent.label_ == "MONEY":
-                money = ent.text.lower()
+        standardized_text = dictionary_declensions(text)
+        
+        doc = self.nlp(standardized_text)
+        cities = [ent.text for ent in doc.ents if ent.label_ in ["GPE", "LOC"]]
+        money = next((ent.text.lower() for ent in doc.ents if ent.label_ == "MONEY"), None)
 
         for currency in currency_list:
             if currency in doc.text.lower():
                 money = currency
                 break
 
-        return cities, money
+        command = self._determine_command(standardized_text)
+        time_alarm = None
+        
+        if command == "будильник":
+            try:
+                time_alarm = parse_time_from_text(standardized_text, self.config['AI_NAME'])
+                logging.info(f"Распознанное время будильника: {time_alarm}")
+            except Exception as e:
+                logging.error(f"Ошибка при распознавании времени: {e}")
+
+        return command, cities, money, standardized_text, time_alarm
 
     def _determine_command(self, text):
         commands = {
@@ -121,7 +110,7 @@ class CommandProcessor:
             "аниме": lambda t: "включи" in t and any(kw in t for kw in ["аниме", "анимешку"]),
             "чипи": lambda t: "пора" in t or "деградировать" in t,
             "хитрая_музыка": lambda t: "подлая" in t or "хитрая" in t and "музыка" in t,
-            "будильник": lambda t: "установи" in t or "поставь" in t and "будильник" in t,
+            "будильник": lambda t: any(kw in t for kw in ["будильник", "разбуди", "поставь"]) and "будильник" in t,
             "время": lambda t: "время" in t or "времени" in t,
             "википедия": lambda t: "википедия" in t or "что такое" in t,
             "панель_управления": lambda t: "управления" in t and any(kw in t for kw in ["открой", "включи"]),
@@ -135,98 +124,9 @@ class CommandProcessor:
 
         for cmd, condition in commands.items():
             if condition(text):
+                logging.info(f"Определена команда: {cmd}")
                 return cmd
         return None
-
-    def _extract_time_alarm(self, command, text):
-        if command == "будильник":
-            return self.parse_time_from_text(text)
-        return None
-
-    def _extract_wiki_query(self, text):
-        return re.sub(rf"\b({self.config['AI_NAME']}|определи|википедия|что такое)\b", "", text, flags=re.IGNORECASE).strip()
-
-    def parse_time_from_text(self, text):
-        # Удаляем лишние слова
-        text = re.sub(
-            rf"\b({self.config['AI_NAME']}|поставь|будильник|на|установи)\b",
-            "",
-            text,
-            flags=re.IGNORECASE
-        ).strip()
-
-        
-        try:
-            # Словарь для преобразования словесного времени в числа
-            time_words = {
-                'один': '1', 'одну': '1', 'первого': '1',
-                'два': '2', 'две': '2', 'второго': '2',
-                'три': '3', 'третьего': '3',
-                'четыре': '4', 'четвертого': '4',
-                'пять': '5', 'пятого': '5',
-                'шесть': '6', 'шестого': '6',
-                'семь': '7', 'седьмого': '7',
-                'восемь': '8', 'восьмого': '8',
-                'девять': '9', 'девятого': '9',
-                'десять': '10', 'десятого': '10',
-                'одиннадцать': '11', 'одиннадцатого': '11',
-                'двенадцать': '12', 'двенадцатого': '12'
-            }
-            
-            # Заменяем словесные числа на цифры
-            for word, number in time_words.items():
-                text = re.sub(rf'\b{word}\b', number, text, flags=re.IGNORECASE)
-            
-            # Пытаемся найти время в разных форматах
-            patterns = [
-                r'(\d{1,2})(?:\s*)?(?::|часов|час|часа)?(?:\s*)?(\d{2})?(?:\s*)?(?:утра|вечера|дня)?',
-                r'(\d{1,2})(?:\s*)?(?:утра|вечера|дня)',
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, text)
-                if match:
-                    hours = int(match.group(1))
-                    minutes = int(match.group(2)) if match.group(2) else 0
-                    
-                    # Обработка времени с учетом периода дня
-                    if 'вечера' in text.lower() and hours < 12:
-                        hours += 12
-                    elif 'утра' in text.lower() and hours == 12:
-                        hours = 0
-                    
-                    now = datetime.now()
-                    alarm_time = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-                    
-                    # Если время уже прошло, добавляем день
-                    if alarm_time <= now:
-                        alarm_time += timedelta(days=1)
-                    
-                    result_time = alarm_time.strftime("%H:%M")
-                    return result_time
-            
-            # Если не удалось распарсить через регулярки, пробуем dateparser
-            parsed_date = dateparser.parse(
-                text,
-                languages=['ru'],
-                settings={'PREFER_DATES_FROM': 'future'}
-            )
-            
-            if parsed_date:
-                now = datetime.now()
-                if parsed_date < now:
-                    parsed_date += timedelta(days=1)
-                
-                result_time = parsed_date.strftime("%H:%M")
-                logging.info(f"Успешно распарсено время через dateparser: {result_time}")
-                return result_time
-                
-            logging.error(f"Не удалось распарсить время из текста: {text}")
-            return None
-                
-        except Exception as e:
-            logging.error(f"Ошибка парсинга времени: {e}")
-            return None
 
 class VoiceAssistant:
     def __init__(self, config_path="json/model_config.json"):
@@ -294,7 +194,6 @@ class VoiceAssistant:
 
     def speak(self, text):
         try:
-            # Пробуем использовать gTTS
             tts = gTTS(text=text, lang='ru')
             fp = io.BytesIO()
             tts.write_to_fp(fp)
@@ -312,6 +211,26 @@ class VoiceAssistant:
             self.tts_engine.say(text)
             self.tts_engine.runAndWait()
 
+    def _handle_alarm(self, time_alarm):
+        return set_alarm(time_alarm)
+
+    def _handle_weather(self, cities):
+        if not cities:
+            return "Не указан город для прогноза погоды"
+            
+        responses = []
+        for city in cities:
+            try:
+                response = call_weather_api(city)
+                responses.append(response)
+                logging.info(f"Получен прогноз погоды для города {city}")
+            except Exception as e:
+                error_msg = f"Ошибка получения погоды для {city}: {e}"
+                logging.error(error_msg)
+                responses.append(error_msg)
+                
+        return " ".join(responses)
+
     async def handle_command(self, command, cities, money, time_alarm, text):
         try:
             self.stream.stop_stream()
@@ -319,24 +238,11 @@ class VoiceAssistant:
             response = None
 
             if command == "будильник":
-                parsed_time = self.command_processor.parse_time_from_text(text)
-                
-                if parsed_time:
-                    alarm_thread = threading.Thread(
-                        target=start_alarm_thread,
-                        args=(parsed_time,),
-                        daemon=True
-                    )
-                    alarm_thread.start()
-                    response = f"Будильник установлен на {parsed_time}"
-                else:
-                    response = "Извините, не удалось распознать время для будильника"
-                logging.info(f"Установка будильника: {response}")
+                response = self._handle_alarm(time_alarm)
 
             elif command == "погода" and cities:
-                for city in cities:
-                    response = call_weather_api(city)
-                    logging.info(f"{response}")
+                response = self._handle_weather(cities)
+                
             elif command == "шутка":
                 response = programmer_joke()
                 logging.info(f"{response}")
@@ -389,39 +295,13 @@ class VoiceAssistant:
                 window_close()
                 logging.info(response)
             elif command == "найди_видео":
-                search_text = re.sub(
-                    rf"\b({self.config['AI_NAME']}|найди|видео)\b", 
-                    "", 
-                    text, 
-                    flags=re.IGNORECASE
-                ).strip()
-                if search_text:
-                    response = f"Ищу видео по запросу: {search_text}"
-                    search_youtube(search_text)
-                    logging.info(response)
-                else:
-                    response = "Не удалось распознать поисковый запрос"
-                    logging.warning(response)
+                search_text = extract_video_query(text, self.config['AI_NAME'])
+                response = search_youtube(search_text)
+                logging.info(response)
             elif command == "открой":
                 if cities:
                     query = " ".join(cities)
-                    try:
-                        # Поиск в Google и получение первой ссылки
-                        google_search_url = f"https://google.com/search?q={query.replace(' ', '+')}"
-                        headers = {'User-Agent': 'Mozilla/5.0'}
-                        search_response = requests.get(google_search_url, headers=headers)
-                        soup = BeautifulSoup(search_response.text, 'html.parser')
-                        first_link = soup.find('div', class_='yuRUbf')
-                        if first_link and first_link.find('a'):
-                            url = first_link.find('a')['href']
-                            webbrowser.open(url)
-                            response = f"Открываю первый результат по запросу '{query}'"
-                        else:
-                            webbrowser.open(google_search_url)
-                            response = f"Показываю результаты поиска для '{query}'"
-                    except Exception as e:
-                        webbrowser.open(google_search_url)
-                        response = f"Показываю результаты поиска для '{query}'"
+                    response = search_and_open(query)
                     logging.info(response)
 
             if response:

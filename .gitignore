@@ -1,1 +1,4 @@
 /functional_modules/api_keys.env
+/logs
+/model/
+/sounds/alarm.mp3

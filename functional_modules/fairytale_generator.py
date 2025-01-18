@@ -6,7 +6,6 @@ import logging
 
 def generate_fairytale(theme=None):
     try:
-        # Загрузка API-ключа из файла .env
         dotenv_path = os.path.join(os.path.dirname(__file__), 'api_keys.env')
         load_dotenv(dotenv_path)
         GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
@@ -14,11 +13,9 @@ def generate_fairytale(theme=None):
         if not GOOGLE_API_KEY:
             raise ValueError("API ключ Google не найден в .env файле")
 
-        # Настройка Google Gemini API
         genai.configure(api_key=GOOGLE_API_KEY)
         model = genai.GenerativeModel('gemini-pro')
 
-        # Формирование промпта
         if theme:
             prompt = (
                 f"Сочини короткую детскую сказку на тему '{theme}'. "

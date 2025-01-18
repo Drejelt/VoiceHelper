@@ -4,5 +4,6 @@
   "SAMPLE_RATE": 16000,
   "BUFFER_SIZE": 4000,
   "FRAME_DURATION_MS": 20,
-  "VAD_MODE": 3
+  "VAD_MODE": 3,
+  "DEFAULT_CITY": "днепропетровск"
 }

@@ -1,4 +1,5 @@
 import re
+import logging
 
 def dictionary_declensions(text):
     city_replacements = {
@@ -56,26 +57,39 @@ def dictionary_declensions(text):
         "десять": "10",
         "одиннадцать": "11",
         "двенадцать": "12",
+        "тринадцать": "13",
+        "четырнадцать": "14",
+        "пятнадцать": "15",
+        "шестнадцать": "16",
+        "семнадцать": "17",
+        "восемнадцать": "18",
+        "девятнадцать": "19",
+        "двадцать": "20",
+        "тридцать": "30",
+        "сорок": "40",
+        "пятьдесят": "50"
     }
 
-    def replace_numbers(match):
-        return number_replacements.get(match.group(0), match.group(0))
-
-    def normalize_time(match):
-        hour = int(match.group(1))
-        if "вечера" in match.group(2) or "дня" in match.group(2):
-            if hour < 12:
-                hour += 12
-        elif "утра" in match.group(2) and hour == 12:
-            hour = 0
-        return f"{hour:02d}:00"
-
-    # Заменяем числовые слова на цифры
+    # Сначала заменяем словесные числа на цифры
     for word, number in number_replacements.items():
-        text = re.sub(rf"\b{word}\b", number, text)
+        text = re.sub(rf"\b{word}\b", number, text, flags=re.IGNORECASE)
 
-    # Преобразуем временные выражения
-    text = re.sub(r"(\d+)\s*(часов|часа|час|утра|вечера|дня)", normalize_time, text)
+    # Обрабатываем время дня с минутами
+    time_patterns = [
+        # Часы дня/вечера с минутами
+        (r'(\d+)\s*час[ао]?в?\s*(дня|вечера)(?:\s+(\d+)\s*минут)?', 
+         lambda m: f"{int(m.group(1))+12}:{m.group(3) if m.group(3) else '00'}"),
+        # Часы утра с минутами
+        (r'(\d+)\s*час[ао]?в?\s*утра(?:\s+(\d+)\s*минут)?', 
+         lambda m: f"{int(m.group(1)):02d}:{m.group(2) if m.group(2) else '00'}"),
+        # Просто часы с минутами
+        (r'(\d+)\s*час[ао]?в?(?:\s+(\d+)\s*минут)?', 
+         lambda m: f"{int(m.group(1)):02d}:{m.group(2) if m.group(2) else '00'}")
+    ]
+
+    # Обрабатываем время дня
+    for pattern, replacement in time_patterns:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
     # Обработка городов и других замен
     pattern = re.compile("|".join(map(re.escape, city_replacements.keys())))

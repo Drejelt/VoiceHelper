@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 
 def get_money_info(money_name="гривна"):
     try:
-        # Сначала пробуем через API
         api_url = "https://api.exchangerate-api.com/v4/latest/USD"
         response = requests.get(api_url)
         response.raise_for_status()
