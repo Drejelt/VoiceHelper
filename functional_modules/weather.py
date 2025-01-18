@@ -1,13 +1,17 @@
-import requests
-import os
 import json
 import logging
+import os
+
+import requests
 from dotenv import load_dotenv
 
-dotenv_path = os.path.join(os.path.dirname(__file__), 'api_keys.env')
-load_dotenv(dotenv_path)
+dotenv_path = os.path.join(os.path.dirname(__file__))
+parent_dir = os.path.dirname(dotenv_path)
+end_dotenv_path = os.path.join(parent_dir, "api_keys.env")
+load_dotenv(end_dotenv_path)
 
 CONFIG_PATH = "json/model_config.json"
+
 
 class WeatherModule:
     def __init__(self, api_key, base_url="https://api.openweathermap.org/data/2.5/weather"):
@@ -32,8 +36,9 @@ class WeatherModule:
                 "city": data["name"]
             }
         except requests.exceptions.RequestException as e:
-            logging.error(f"Ошибка при получении погоды для города {city_name}: {e}")
+            logging.error(f"Ой-ой! Похоже, погодный сервер ушёл на обед! Не могу достучаться до {city_name}: {e}")
             return None
+
 
 def get_default_city():
     try:
@@ -41,21 +46,22 @@ def get_default_city():
             config = json.load(f)
             return config.get("DEFAULT_CITY", "Днепр")
     except Exception as e:
-        logging.error(f"Ошибка при чтении конфигурации: {e}")
+        logging.error(f"Упс! Наш конфигурационный файл играет в прятки! Не могу его найти: {e}")
         return "Днепр"
+
 
 def call_weather_api(city_name=None):
     api_key = os.getenv('WEATHER_API')
     if not api_key:
-        return "Отсутствует ключ API для получения погоды"
+        return "Ой-ёй! Кажется, ключ API решил сбежать в отпуск! Проверьте, не спрятался ли он в .env файле?"
 
     if not city_name:
         city_name = get_default_city()
-        logging.info(f"Используется город по умолчанию: {city_name}")
+        logging.info(f"Город не указан, будем искать погоду в нашем любимом {city_name}!")
 
     weather_module = WeatherModule(api_key)
     weather = weather_module.get_weather(city_name)
-    
+
     if weather:
         return (
             f"температура {weather['temperature']:.1f}°C, "
@@ -63,4 +69,4 @@ def call_weather_api(city_name=None):
             f"скорость ветра {weather['wind_speed']} м/с"
         )
     else:
-        return f"Не удалось получить данные о погоде для города {city_name}"
+        return f"Ой! Похоже, погода в городе {city_name} решила поиграть в прятки! Может, попробуем другой город?"

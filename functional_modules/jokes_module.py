@@ -1,7 +1,7 @@
 import pyjokes, requests
-from googletrans import Translator
+from googletrans import Translator  # Для перевода шуток (не всегда удачно)
 
-URL = "https://v2.jokeapi.dev/joke/Any"
+URL = "https://v2.jokeapi.dev/joke/Any"  # Кладезь черного юмора
 
 
 def programmer_joke():
@@ -17,11 +17,12 @@ def programmer_joke():
             translator = Translator()
             translated_joke = translator.translate(joke, dest='ru')
             return translated_joke.text
-    except requests.RequestException:
+    except requests.RequestException:  # Если интернет решил пошутить
         try:
+            # План Б: достаем шутку из локального запасника
             joke = pyjokes.get_joke()
             translator = Translator()
             translated_joke = translator.translate(joke, dest='ru')
             return translated_joke.text
-        except Exception:
+        except Exception:  # Когда всё пошло совсем не по плану
             return joke

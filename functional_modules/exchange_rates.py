@@ -9,21 +9,22 @@ def get_money_info(money_name="гривна"):
         response.raise_for_status()
         rates = response.json()["rates"]
 
-        # Словарь соответствия названий валют их кодам
+        # Словарь для перевода с человеческого на валютный
         currency_codes = {
+            "гривна": "UAH",
             "доллар": "USD",
             "евро": "EUR",
-            "рубль": "RUB",
-            "гривна": "UAH",
-            "фунт": "GBP",
             "йена": "JPY",
-            "франк": "CHF",
-            "песо": "MXN",
             "крона": "SEK",
-            "юань": "CNY",
-            "рэал": "BRL"
+            "песо": "MXN",
+            "рубль": "RUB",
+            "рэал": "BRL",
+            "фунт": "GBP",
+            "франк": "CHF",
+            "юань": "CNY"
         }
 
+        # Проверяем, знаем ли мы такие валюты
         if money_name.lower() in currency_codes:
             code = currency_codes[money_name.lower()]
             if code in rates:
@@ -32,17 +33,20 @@ def get_money_info(money_name="гривна"):
                     return f"Курс валюты {money_name}: 1 USD = {rate} UAH"
                 return f"Курс валюты {money_name}: 1 USD = {rate} {code}"
 
-        # Если API не сработал, используем парсинг Google как запасной вариант
+        # Если API отдыхает, идём гуглить (как все нормальные люди)
         url = f"https://www.google.com/search?q=курс+{money_name.lower()}"
 
         class_dict = {
-            "title": "vLqKYe",  # Класс названия валюты
-            "count": "DFlfde SwHCTb",  # Класс для цены
-            "day": "k0Rg6d hqAUc",  # День, время
+            "title": "vLqKYe",  # Тут прячется имя валюты
+            "count": "DFlfde SwHCTb",  # А тут её стоимость
+            "day": "k0Rg6d hqAUc",  # Когда последний раз проверяли
         }
 
+        # Притворяемся нормальным браузером, а то нас раскусят
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (HTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (HTML, like Gecko) "
+            "Chrome/118.0.0.0 Safari/537.36"
         }
 
         r = requests.get(url, headers=headers)
@@ -57,9 +61,22 @@ def get_money_info(money_name="гривна"):
         return f"Курс валюты {title_money}: 1 USD = {count_money}"
 
     except requests.exceptions.RequestException as e:
-        return f"Ошибка при подключении: {e}"
+        return f"Ой-ой! Кажется, интернет решил поиграть в прятки! Не могу достучаться до сервера: {e}"
     except AttributeError:
-        return "Не удалось найти информацию о валюте. Возможно, неверное название валюты."
+        return "Упс! Похоже, эта валюта настолько экзотическая, что даже Google о ней не слышал! Может, попробуете что-то более земное?"
 
 
-currency_list = ["доллар", "евро", "рубль", "гривна", "фунт", "йена", "франк", "песо", "крона", "юань", "рэал"]
+# Список валют, которые мы знаем (остальные для нас - тёмный лес)
+currency_list = [
+    "гривна",
+    "доллар",
+    "евро", 
+    "йена",
+    "крона",
+    "песо",
+    "рубль",
+    "рэал",
+    "фунт",
+    "франк",
+    "юань"
+]
