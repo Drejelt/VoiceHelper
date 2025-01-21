@@ -19,6 +19,8 @@ class Config(BaseModel):
     FRAME_DURATION_MS: int = 20
     VAD_MODE: int = 3 
     DEFAULT_CITY: str = "днепропетровск" # Город по умолчанию (где-то между Марсом и Венерой)
+    DEFAULT_CURRENCY: str = "UAH"
+    RESTART_TIMEOUT: int = 30  # Время в минутах до перезапуска
     logging_enabled: bool = True  # Включаем логирование, чтобы потом было над чем посмеяться
 
 

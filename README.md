@@ -20,7 +20,7 @@
 
 ## 🛠️ Системные требования
 
-- Python 3.8+ (более старые версии уже на пенсии)
+- Python 3.10+
 - Куча пакетов из requirements.txt (листайте и плачьте)
 - Модель Vosk для русского языка
 - Работающий микрофон
@@ -31,7 +31,7 @@
 1. Для пользователей Linux:
 
         sudo apt-get update
-        sudo apt-get install python3-dev portaudio19-dev python3-pyaudio
+        sudo apt-get install python3-dev portaudio19-dev python3-pyaudio xdotool
 2. Для владельцев Mac (да, я и о вас подумали):
 
         brew install portaudio
