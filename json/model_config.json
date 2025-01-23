@@ -5,6 +5,7 @@
     "BUFFER_SIZE": 4000,
     "FRAME_DURATION_MS": 20,
     "VAD_MODE": 3,
+    "RESTART_TIMEOUT": 30,
     "DEFAULT_CITY": "днепропетровск",
     "logging_enabled": true
 }
