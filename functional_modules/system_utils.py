@@ -5,29 +5,59 @@ import pyautogui
 from datetime import datetime
 
 class SystemController:
+    def __init__(self):
+        self.log_dir = "logs"  # Директория с логами
+
     def shutdown(self) -> str:
-        """Выключение компьютера"""
         os.system("shutdown -h now")
         return "Выключаю компьютер..."
 
     def restart(self) -> str:
-        """Перезагрузка компьютера"""
         os.system("reboot")
         return "Перезагружаю компьютер..."
 
     def logout(self) -> str:
-        """Выход из системы"""
         os.system("pkill -KILL -u $USER")
         return "Выхожу из системы..."
 
     def take_screenshot(self) -> str:
-        """Создание скриншота"""
         try:
             sc = pyautogui.screenshot()
             sc.save('screenshot.png')
             return "Скриншот сохранен"
         except Exception as e:
             return f"Ой-ой! Кажется, камера застеснялась и отказывается фотографировать! Ошибка: {e}"
+
+    def list_log_files(self) -> list:
+        try:
+            if not os.path.exists(self.log_dir):
+                return []
+            return sorted([f for f in os.listdir(self.log_dir) if f.endswith('.log')])
+        except Exception as e:
+            logging.error(f"Ошибка при получении списка логов: {e}")
+            return []
+
+    def read_log_file(self, filename: str) -> str:
+        try:
+            file_path = os.path.join(self.log_dir, filename)
+            if not os.path.exists(file_path):
+                return "Файл не найден"
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logging.error(f"Ошибка при чтении лога {filename}: {e}")
+            return f"Ошибка при чтении файла: {str(e)}"
+
+    def delete_log_file(self, filename: str) -> bool:
+        try:
+            file_path = os.path.join(self.log_dir, filename)
+            if not os.path.exists(file_path):
+                return False
+            os.remove(file_path)
+            return True
+        except Exception as e:
+            logging.error(f"Ошибка при удалении лога {filename}: {e}")
+            return False
 
 
 class LoggerConfig:

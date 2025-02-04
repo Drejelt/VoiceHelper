@@ -17,3 +17,9 @@ PyAutoGUI~=0.9.54
 Wikipedia-API~=0.3.2
 google~=3.0.0
 protobuf~=5.29.2
+fastapi
+uvicorn
+aiofiles
+python-multipart
+sqlalchemy
+psycopg2-binary

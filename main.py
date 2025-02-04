@@ -83,7 +83,10 @@ class CommandProcessor:  # Переводчик с человеческого н
         self.info_services = info_services  # Для получения информации из внешнего мира
         self.scheduler = scheduler  # Личный тайм-менеджер
         self.nlp = spacy.load("ru_core_news_sm")  # Загружаем русский язык (все 150МБ его)
-
+        # Добавляем новые модули
+        self.entertainment = Entertainment()
+        self.media_controller = MediaController()
+        self.system_controller = SystemController()
 
     def extract_entities(self, text: str) -> Tuple[Optional[str], Optional[List[str]], Optional[str], Optional[str], Optional[str]]:
         if self.config["AI_NAME"].lower() not in text.lower():
@@ -115,7 +118,8 @@ class CommandProcessor:  # Переводчик с человеческого н
 
     def _determine_command(self, text: str) -> Optional[str]:
         commands = {
-            "найди_видео": lambda t: "найди" in t and "видео" in t,
+            "найди_видео": lambda t: "видео" and any(word in t for word in ["найди", "поищи", "покажи"]),
+            "открой_видео": lambda t: "открой видео" in t,
             "время": lambda t: "время" in t or "времени" in t,
             "погода": lambda t: "погода" in t,
             "новости": lambda t: "новости" in t,
@@ -124,7 +128,7 @@ class CommandProcessor:  # Переводчик с человеческого н
             "шутка": lambda t: "шутка" in t or "анекдот" in t,
             "сказка": lambda t: "сказку" in t or "историю" in t,
             "панель_управления": lambda t: "управления" in t and any(kw in t for kw in ["открой", "включи"]),
-            "открой": lambda t: "открой" in t or "найди" in t,
+            #"открой": lambda t: "открой" in t or "найди" in t,
             "закрой_вкладку": lambda t: "закрой" in t and "вкладку" in t,
             "закрой_окно": lambda t: "закрой" in t and "вкладку" in t,
             "пора_спать": lambda t: "отключись" in t or "выключись" in t,
@@ -148,12 +152,18 @@ class CommandProcessor:  # Переводчик с человеческого н
             "замедлить": lambda t: any(kw in t for kw in ["замедли", "медленнее"]),
             "вперед": lambda t: any(kw in t for kw in ["вперед", "перемотай вперед"]),
             "назад": lambda t: any(kw in t for kw in ["назад", "перемотай назад"]),
-            "в_начало": lambda t: any(kw in t for kw in ["в начало", "сначала"]),
+            "в_начало": lambda t: any(kw in t for kw in ["в начало", "сначала" "в начала"]),
             "монетка": lambda t: any(kw in t for kw in ["монетка", "бросить монетку", "брось монетку"]),
             "привет": lambda t: any(word in t for word in ["привет", "здравствуй", "доброе утро", "добрый день", "добрый вечер"]),
             "пока": lambda t: any(word in t for word in ["пока", "до свидания", "прощай"]),
             "спокойной_ночи": lambda t: any(word in t for word in ["спокойной ночи", "доброй ночи"]),
             "спасибо": lambda t: any(word in t for word in ["спасибо", "благодарю"]),
+            "скриншот": lambda t: "скриншот" in t or "снимок экрана" in t,
+            "заметка": lambda t: "заметку" in t or "запиши" in t,
+            "прочитай_заметки": lambda t: "прочитай" in t and "заметки" in t,
+            "выключи_компьютер": lambda t: "выключи компьютер" in t,
+            "перезагрузи": lambda t: "перезагрузи" in t or "перезагрузка" in t,
+            "выйти": lambda t: "выйти из системы" in t or "разлогиниться" in t,
         }
 
         for cmd, condition in commands.items():
@@ -165,8 +175,8 @@ class CommandProcessor:  # Переводчик с человеческого н
 
 class VoiceAssistant:  # Электронный огузок (надеюсь, не станет Скайнетом)
     def __init__(self, config_path: str = "json/model_config.json"):
-        self.config_manager = ConfigManager(config_path)  # Менеджер настроек
-        self.config = self.config_manager.load()  # Загружаем настройки (если они не сбежали)
+        self.config_path = config_path
+        self.load_config()
 
         self.scheduler = Scheduler()  # Мастер времени
         self.info_services = InfoServices()  # Знаток всего на свете
@@ -194,15 +204,54 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
         self.last_activity = time.time()
         self.restart_timeout = self.config.get("RESTART_TIMEOUT", 30) * 60  # Конвертируем минуты в секунды
 
+        self.is_running = True  # Флаг для контроля работы ассистента
+
+    def load_config(self):
+        """Загружает конфигурацию из файла"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+            logging.info("Конфигурация успешно загружена")
+        except Exception as e:
+            logging.error(f"Ошибка при загрузке конфигурации: {e}")
+            self.config = {}
+
+    def reload_config(self):
+        """Перезагружает конфигурацию и обновляет необходимые компоненты"""
+        try:
+            old_config = self.config.copy()
+            self.load_config()
+            
+            # Обновляем компоненты, которые зависят от конфигурации
+            if old_config.get('AI_NAME') != self.config.get('AI_NAME'):
+                self.command_processor = CommandProcessor(self.config, self.info_services, self.scheduler)
+            
+            logging.info("Конфигурация успешно перезагружена")
+            return True
+        except Exception as e:
+            logging.error(f"Ошибка при перезагрузке конфигурации: {e}")
+            return False
+
     def setup_audio_components(self):
-        self.vad = webrtcvad.Vad()
-        self.vad.set_mode(self.config.get("VAD_MODE", 3))
-        
-        self.audio_processor = AudioProcessor(
-            self.config["SAMPLE_RATE"],
-            self.config["BUFFER_SIZE"]
-        )
-        self.stream = self.audio_processor.setup_stream()
+        """Настройка аудио компонентов"""
+        try:
+            if hasattr(self, 'audio_processor'):
+                if hasattr(self.audio_processor, 'pyaudio_instance'):
+                    self.audio_processor.pyaudio_instance.terminate()
+                del self.audio_processor
+                
+            self.vad = webrtcvad.Vad()
+            self.vad.set_mode(self.config.get("VAD_MODE", 3))
+            
+            self.audio_processor = AudioProcessor(
+                self.config["SAMPLE_RATE"],
+                self.config["BUFFER_SIZE"]
+            )
+            self.stream = self.audio_processor.setup_stream()
+            logging.info("Аудио компоненты успешно настроены")
+        except Exception as e:
+            logging.error(f"Ошибка при настройке аудио компонентов: {e}")
+            raise
 
     def setup_voice_components(self):
         self.model = vosk.Model(self.config["MODEL_PATH"])
@@ -245,12 +294,19 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
             logging.error(f"Поток застрял в пробке! Пытаемся его вытащить: {e}")
 
     def start_voice_assistant(self) -> None:
+        """Запуск ассистента"""
+        self.is_running = True
         try:
-            logging.info("Голосовой помощник запущен и готов к работе")
-            self.run()
+            while self.is_running:
+                self.run()
         except Exception as e:
-            logging.error(f"Помощник решил взять выходной без предупреждения: {e}")
-            raise
+            logging.error(f"Ошибка в работе ассистента: {e}")
+        finally:
+            if hasattr(self, 'stream'):
+                self.stream.stop_stream()
+                self.stream.close()
+            if hasattr(self, 'pyaudio_instance'):
+                self.pyaudio_instance.terminate()
 
     def run(self) -> None:
         asyncio.run(self.process_audio_stream())
@@ -263,23 +319,29 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
             return True
         return False
 
-    def _restart_components(self):
-        """Перезапускает компоненты распознавания речи"""
+    def restart(self):
+        """Перезапуск аудио компонентов"""
         try:
-            # Останавливаем текущий поток
+            # Останавливаем текущие компоненты
             if hasattr(self, 'stream'):
                 self.stream.stop_stream()
                 self.stream.close()
-
+            if hasattr(self, 'pyaudio_instance'):
+                self.pyaudio_instance.terminate()
+            
+            # Даем время на освобождение ресурсов
+            time.sleep(1)
+            
             # Пересоздаем компоненты
             self.setup_audio_components()
             self.setup_voice_components()
             
-            logging.info("Компоненты успешно перезапущены!")
-            self.last_activity = time.time()
+            self.is_running = True
+            logging.info("Аудио компоненты успешно перезапущены")
+            return True
         except Exception as e:
             logging.error(f"Ошибка при перезапуске компонентов: {e}")
-            raise
+            return False
 
     async def process_audio_stream(self) -> None:
         while True:
@@ -290,7 +352,7 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
 
                 # Проверяем необходимость перезапуска
                 if self._check_restart_needed():
-                    self._restart_components()
+                    self.restart()
 
                 data = self.stream.read(self.config["BUFFER_SIZE"])
                 if self.rec.AcceptWaveform(data):
@@ -323,8 +385,13 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
 
             match command:
                 case "будильник":
-                    response = self.scheduler.set_alarm(time_alarm)
-                    logging.info(f"Ответ будильника: {response}")
+                    time_str = self.scheduler.parse_time_from_text(text, self.config["AI_NAME"])
+                    if time_str:
+                        logging.info(f"Распознанное время будильника: {time_str}")
+                        response = self.scheduler.set_alarm(time_str)
+                        logging.info(f"Ответ будильника: {response}")
+                    else:
+                        response = "Не удалось распознать время для будильника"
                 
                 case "погода" if cities:
                     response = self.info_services.get_weather(cities[0])
@@ -492,6 +559,31 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
                 case "очисти_будильники":
                     response = self.scheduler.clear_alarms()
                     logging.info(response)
+                
+                case "скриншот":
+                    response = self.system_controller.take_screenshot()
+                    logging.info(f"Сделан скриншот: {response}")
+                
+                case "выключи_компьютер":
+                    response = self.system_controller.shutdown()
+                    logging.info("Выключение компьютера")
+                
+                case "перезагрузи":
+                    response = self.system_controller.restart()
+                    logging.info("Перезагрузка компьютера")
+                
+                case "выйти":
+                    response = self.system_controller.logout()
+                    logging.info("Выход из системы")
+
+                case "найди_видео" | "открой_видео":
+                    query = self.media_controller.extract_video_query(text, self.config["AI_NAME"])
+                    if query:
+                        response = self.media_controller.search_youtube(query)
+                        logging.info(f"Поиск видео: {query}")
+                    else:
+                        response = "Не удалось понять, какое видео вы ищете"
+                        logging.warning("Пустой запрос для поиска видео")
 
             if response:
                 self.speak(response)
@@ -503,3 +595,15 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
         finally:
             self.is_speaking = False
             self.resume_stream()
+
+    def stop(self):
+        """Остановка ассистента"""
+        self.is_running = False
+        if hasattr(self, 'stream'):
+            self.stream.stop_stream()
+            self.stream.close()
+        if hasattr(self, 'audio_processor') and hasattr(self.audio_processor, 'pyaudio_instance'):
+            self.audio_processor.pyaudio_instance.terminate()
+        pygame.mixer.quit()  # Освобождаем ресурсы pygame
+        self.tts_engine.stop()  # Останавливаем движок TTS
+        logging.info("Ассистент остановлен")

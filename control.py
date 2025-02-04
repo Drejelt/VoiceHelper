@@ -3,12 +3,18 @@ import logging  # Для записи всех наших "упс" момент�
 import os
 import threading
 from hashlib import sha256  # Для шифрования паролей, чтобы хакеры плакали (от смеха)
+import asyncio
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse  # Когда нужно элегантно послать пользователя куда подальше
+from fastapi import Depends, FastAPI, HTTPException, Request, Body, APIRouter
+from fastapi.responses import RedirectResponse, StreamingResponse  # Когда нужно элегантно послать пользователя куда подальше
 from fastapi.security import HTTPBasic, HTTPBasicCredentials  # Чтобы плохие дяди не пробрались в систему
 from main import VoiceAssistant  # Наш болтливый огузок
 from pydantic import BaseModel  # Следит за порядком в данных как строгий родитель
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from models import User, get_db, SessionLocal, Base
+from sqlalchemy.orm import Session
+from typing import List
 
 
 class Config(BaseModel):
@@ -33,7 +39,12 @@ class VoiceAssistantAPI:
         self.assistant_thread = None  # Поток для ассистента (пока спит)
         self.security = HTTPBasic()  # Наша цифровая охрана
         self._setup_routes()  # Расставляем указатели на нашем цифровом перекрёстке
-        self._create_default_credentials()  # Создаём учётку админа, если её ещё нет
+        self._create_default_user()
+        
+        # Добавляем поддержку статических файлов и шаблонов
+        self.app.mount("/static", StaticFiles(directory="html/static"), name="static")
+        self.app.mount("/assets", StaticFiles(directory="html/assets"), name="assets")
+        self.templates = Jinja2Templates(directory="html/templates")
 
     def _setup_routes(self):  # Карта нашего цифрового мира
         self.app.get("/")(self.root)  # Главная страница, где всё начинается
@@ -41,6 +52,63 @@ class VoiceAssistantAPI:
         self.app.post("/config")(self.update_config)  # Обновляем настройки, если кто-то осмелится
         self.app.on_event("startup")(self.startup_event)  # Что делать при пробуждении
         self.app.on_event("shutdown")(self.shutdown_event)  # Что делать перед сном
+        self.app.get("/api/files")(self.get_json_files)
+        self.app.get("/api/files/{filename}")(self.get_file_content)
+        self.app.post("/api/files/{filename}")(self.update_file_content)
+        self.app.post("/api/restart")(self.restart_assistant)
+        
+        # Добавляем маршрут для панели управления
+        @self.app.get("/admin")
+        async def admin_panel(
+            request: Request, 
+            credentials: HTTPBasicCredentials = Depends(HTTPBasic()),
+            db: Session = Depends(get_db)
+        ):
+            self.verify_credentials(credentials, db)
+            return self.templates.TemplateResponse("admin_panel.html", {"request": request})
+
+        @self.app.post("/api/update_credentials")
+        async def update_credentials(
+            credentials: HTTPBasicCredentials = Depends(HTTPBasic()),
+            db: Session = Depends(get_db),
+            new_credentials: dict = Body(...)
+        ):
+            self.verify_credentials(credentials, db)
+            
+            # Обновляем учетные данные в базе данных
+            user = db.query(User).filter(User.username == credentials.username).first()
+            if user:
+                user.username = new_credentials["username"]
+                user.password_hash = sha256(new_credentials["password"].encode()).hexdigest()
+                db.commit()
+                return {"message": "Учетные данные успешно обновлены"}
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+        @self.app.get("/api/logs/list")
+        async def list_logs():
+            try:
+                files = api.voice_assistant.system_controller.list_log_files()
+                return {"files": files}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/logs/view/{filename}")
+        async def view_log(filename: str):
+            try:
+                content = api.voice_assistant.system_controller.read_log_file(filename)
+                return {"content": content}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete("/api/logs/delete/{filename}")
+        async def delete_log(filename: str):
+            try:
+                success = api.voice_assistant.system_controller.delete_log_file(filename)
+                if success:
+                    return {"message": f"Файл {filename} успешно удален"}
+                raise HTTPException(status_code=404, detail=f"Файл {filename} не найден")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
     def load_config(self):  # Загружаем конфигурацию из файла
         try:
@@ -62,39 +130,37 @@ class VoiceAssistantAPI:
                 detail=f"Упс! Файл конфигурации решил поиграть в прятки: {e}"
             )
 
-    def verify_credentials(self, credentials: HTTPBasicCredentials):  # Проверяем, свой/чужой
-        try:
-            with open(self.CREDENTIALS_FILE, "r", encoding="utf-8") as file:
-                stored_credentials = json.load(file)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Караул! Учетные данные пользователя испарились как утренний туман: {e}"
-            )
-
-        username = credentials.username
+    def verify_credentials(self, credentials: HTTPBasicCredentials, db: Session):
+        user = db.query(User).filter(User.username == credentials.username).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Неверные учетные данные")
+        
         password_hash = sha256(credentials.password.encode()).hexdigest()
+        if user.password_hash != password_hash:
+            raise HTTPException(status_code=401, detail="Неверные учетные данные")
+        
+        return True
 
-        if username in stored_credentials and stored_credentials[username] == password_hash:
-            return True
+    async def root(
+        self,
+        credentials: HTTPBasicCredentials = Depends(HTTPBasic()),
+        db: Session = Depends(get_db)
+    ):
+        self.verify_credentials(credentials, db)
+        return RedirectResponse(url="http://127.0.0.1:8000/admin")
 
-        raise HTTPException(status_code=401, detail="Ха-ха! Кажется, кто-то забыл свой пароль или решил притвориться админом!")
-
-    async def root(self, credentials: HTTPBasicCredentials = Depends(HTTPBasic())):
-        self.verify_credentials(credentials)
-        return RedirectResponse(url="http://127.0.0.1:8000/docs")
-
-    async def get_config(self, credentials: HTTPBasicCredentials = Depends(HTTPBasic())):  # Показываем настройки
-        self.verify_credentials(credentials)
+    async def get_config(self, credentials: HTTPBasicCredentials = Depends(HTTPBasic()), db: Session = Depends(get_db)):
+        self.verify_credentials(credentials, db)
         config = self.load_config()
         return Config(**config)
 
-    async def update_config(  # Обновляем настройки
+    async def update_config(
         self,
         updated_config: Config,
-        credentials: HTTPBasicCredentials = Depends(HTTPBasic())
+        credentials: HTTPBasicCredentials = Depends(HTTPBasic()),
+        db: Session = Depends(get_db)
     ):
-        self.verify_credentials(credentials)
+        self.verify_credentials(credentials, db)
         config_dict = updated_config.dict()
         self.save_config(config_dict)
 
@@ -119,23 +185,64 @@ class VoiceAssistantAPI:
     async def shutdown_event(self):  # Прощаемся с пользователем
         logging.info("FastAPI приложение отправляется спать. Не будите его без печенек!")
 
-    def _create_default_credentials(self):  # Создаём учётку админа, если её нет
-        if not os.path.exists(self.CREDENTIALS_FILE):
-            default_username = "admin"  # Самый креативный логин в мире
-            default_password = "admin"  # Самый безопасный пароль в мире (нет)
-            hashed_password = sha256(default_password.encode()).hexdigest()
-
-            with open(self.CREDENTIALS_FILE, "w", encoding="utf-8") as file:
-                json.dump(
-                    {default_username: hashed_password},
-                    file,
-                    ensure_ascii=False,
-                    indent=4
+    def _create_default_user(self):
+        db = SessionLocal()
+        try:
+            if not db.query(User).filter(User.username == "admin").first():
+                default_user = User(
+                    username="admin",
+                    password_hash=sha256("admin".encode()).hexdigest()
                 )
+                db.add(default_user)
+                db.commit()
+                logging.info("Создан пользователь по умолчанию")
+        finally:
+            db.close()
 
-            logging.info(
-                f"Ура! Родился новый файл {self.CREDENTIALS_FILE} с секретными данными!"
-            )
+    async def get_logs(self, lines: int = 100):
+        try:
+            log_file = os.path.join(self.LOG_DIR, "assistant.log")
+            with open(log_file, "r", encoding="utf-8") as f:
+                logs = f.readlines()[-lines:]
+            return {"logs": logs}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка чтения логов: {e}")
+
+
+    async def get_json_files(self):
+        json_files = ["model_config.json", "credentials.json", "alarms.json"]
+        return {"files": json_files}
+
+    async def get_file_content(self, filename: str):
+        try:
+            file_path = os.path.join("json", filename)
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = json.load(f)
+
+                return content
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка чтения файла: {e}")
+
+    async def update_file_content(self, filename: str, content: dict):
+        try:
+            file_path = os.path.join("json", filename)
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(content, f, ensure_ascii=False, indent=4)
+            return {"message": f"Файл {filename} успешно обновлен"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка обновления файла: {e}")
+
+    async def restart_assistant(self):
+        try:
+            if hasattr(self.voice_assistant, 'reload_config'):
+                self.voice_assistant.reload_config()
+
+            logging.info("Ассистент успешно перезапущен")
+            return {"success": True, "message": "Ассистент успешно перезапущен"}
+        except Exception as e:
+            error_msg = f"Ошибка при перезапуске ассистента: {e}"
+            logging.error(error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
 
 
 api = VoiceAssistantAPI()

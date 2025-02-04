@@ -67,4 +67,17 @@ class SocialInteractions:
 
     def get_thanks(self) -> str:
         """Возвращает ответ на благодарность"""
-        return random.choice(self.thanks) 
+        return random.choice(self.thanks)
+
+    def get_greeting_with_name(self, name: str) -> str:
+        hour = datetime.now().hour
+        if 0 <= hour <= 3:
+            return f"Как-то поздновато, {name}! Может, пора спать?"
+        elif 4 <= hour < 12:
+            return f"Доброе утро, {name}!"
+        elif 12 <= hour < 17:
+            return f"Добрый день, {name}!"
+        elif 17 <= hour < 19:
+            return f"Добрый вечер, {name}!"
+        else:
+            return f"Здравствуйте, {name}!" 

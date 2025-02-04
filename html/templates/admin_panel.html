@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Панель управления ассистентом</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor/min/vs/loader.js"></script>
+    <link href="/assets/styles/admin_panel.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container-fluid">
+        <div class="row p-3">
+            <!-- Верхняя панель -->
+            <div class="col-12 mb-4">
+                <div class="dashboard-card">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h2>Панель управления ассистентом</h2>
+                        <div>
+                            <span class="status-indicator status-active" id="assistantStatus"></span>
+                            <span id="statusText">Активен</span>
+                            <button class="btn btn-warning ms-3" onclick="restartAssistant()">Перезапустить ассистента</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Левая панель -->
+            <div class="col-md-4">
+                <!-- Конфигурация -->
+                <div class="dashboard-card">
+                    <h3>Конфигурация</h3>
+                    <div class="mb-3">
+                        <label>Имя ассистента</label>
+                        <input type="text" class="form-control" id="aiName">
+                    </div>
+                    <div class="mb-3">
+                        <label>Город по умолчанию</label>
+                        <input type="text" class="form-control" id="defaultCity">
+                    </div>
+                    <button class="btn btn-primary" onclick="saveConfig()">Сохранить настройки</button>
+                </div>
+
+                <!-- Настройки админа -->
+                <div class="dashboard-card">
+                    <h3>Настройки администратора</h3>
+                    <div class="mb-3">
+                        <label class="form-label">Новый логин</label>
+                        <input type="text" class="form-control" id="newUsername">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Новый пароль</label>
+                        <input type="password" class="form-control" id="newPassword">
+                    </div>
+                    <button class="btn btn-primary" onclick="updateAdminCredentials()">Обновить учетные данные</button>
+                </div>
+
+                <!-- JSON файлы -->
+                <div class="dashboard-card">
+                    <h3>JSON файлы</h3>
+                    <div id="fileList" class="list-group"></div>
+                </div>
+            </div>
+
+            <!-- Правая панель -->
+            <div class="col-md-8">
+                <ul class="nav nav-tabs" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" id="editor-tab" data-bs-toggle="tab" data-bs-target="#editor" type="button">JSON Редактор</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button">Логи</button>
+                    </li>
+                </ul>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="editor">
+                            <div class="editor-container">
+                                <div id="jsonEditor"></div>
+                                <button class="btn btn-primary mt-3" onclick="saveCurrentFile()">Сохранить</button>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="logs">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h4>Логи</h4>
+                                <button class="btn btn-sm btn-primary" onclick="refreshLogsList()">Обновить</button>
+                            </div>
+                            <div class="logs-container">
+                                <div id="logsList" class="list-group mb-3"></div>
+                                <div id="logViewer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/admin_panel.js"></script>
+</body>
+</html>

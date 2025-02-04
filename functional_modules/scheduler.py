@@ -17,7 +17,6 @@ class Scheduler:
         self.load_alarms()  # Загружаем сохраненные будильники при инициализации
 
     def load_alarms(self):
-        """Загружает сохраненные будильники из файла"""
         try:
             if not os.path.exists(self.alarms_file):
                 self.active_alarms = {}
@@ -42,7 +41,6 @@ class Scheduler:
             self.active_alarms = {}
 
     def save_alarms(self):
-        """Сохраняет текущие будильники в файл"""
         try:
             with open(self.alarms_file, 'w', encoding='utf-8') as file:
                 json.dump(self.active_alarms, file, ensure_ascii=False, indent=2)
@@ -122,7 +120,6 @@ class Scheduler:
         return result
 
     def clear_alarms(self) -> str:
-        """Очищает все активные будильники"""
         self.active_alarms = {}
         self.save_alarms()
         return "Все будильники очищены"
