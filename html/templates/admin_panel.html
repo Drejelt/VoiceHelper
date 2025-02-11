@@ -69,23 +69,47 @@
                     <li class="nav-item">
                         <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button">Логи</button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="commands-tab" data-bs-toggle="tab" data-bs-target="#commands" type="button" role="tab">Команды</button>
+                    </li>
                 </ul>
-                    
-                    <div class="tab-content">
-                        <div class="tab-pane fade show active" id="editor">
-                            <div class="editor-container">
-                                <div id="jsonEditor"></div>
-                                <button class="btn btn-primary mt-3" onclick="saveCurrentFile()">Сохранить</button>
-                            </div>
+                
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="editor">
+                        <div class="editor-container">
+                            <div id="jsonEditor"></div>
+                            <button class="btn btn-primary mt-3" onclick="saveCurrentFile()">Сохранить</button>
                         </div>
-                        <div class="tab-pane fade" id="logs">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h4>Логи</h4>
-                                <button class="btn btn-sm btn-primary" onclick="refreshLogsList()">Обновить</button>
-                            </div>
-                            <div class="logs-container">
-                                <div id="logsList" class="list-group mb-3"></div>
-                                <div id="logViewer"></div>
+                    </div>
+                    <div class="tab-pane fade" id="logs">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h4>Логи</h4>
+                            <button class="btn btn-sm btn-primary" onclick="refreshLogsList()">Обновить</button>
+                        </div>
+                        <div class="logs-container">
+                            <div id="logsList" class="list-group mb-3"></div>
+                            <div id="logViewer"></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="commands" role="tabpanel">
+                        <div class="container mt-3">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h4>Добавить команду</h4>
+                                    <div class="mb-3">
+                                        <label class="form-label">Команда</label>
+                                        <input type="text" class="form-control" id="newCommand">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Ответ</label>
+                                        <textarea class="form-control" id="newResponse" rows="3"></textarea>
+                                    </div>
+                                    <button class="btn btn-primary" onclick="addCommand()">Добавить</button>
+                                </div>
+                                <div class="col-md-6">
+                                    <h4>Существующие команды</h4>
+                                    <div id="commandsList" class="list-group mt-3"></div>
+                                </div>
                             </div>
                         </div>
                     </div>

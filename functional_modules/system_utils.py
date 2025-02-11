@@ -6,7 +6,7 @@ from datetime import datetime
 
 class SystemController:
     def __init__(self):
-        self.log_dir = "logs"  # Директория с логами
+        self.log_dir = "logs"
 
     def shutdown(self) -> str:
         os.system("shutdown -h now")

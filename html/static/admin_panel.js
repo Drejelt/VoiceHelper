@@ -18,22 +18,23 @@ document.addEventListener('DOMContentLoaded', function() {
     tabElements.forEach(tab => {
         tab.addEventListener('click', function(e) {
             e.preventDefault();
-
+            
             tabElements.forEach(t => t.classList.remove('active'));
-
             this.classList.add('active');
-
+            
             document.querySelectorAll('.tab-pane').forEach(pane => {
                 pane.classList.remove('show', 'active');
             });
             
-            // Показываем нужную панель
             const target = this.getAttribute('data-bs-target');
-            document.querySelector(target).classList.add('show', 'active');
+            const targetPane = document.querySelector(target);
+            targetPane.classList.add('show', 'active');
             
-            // Если это вкладка логов, обновляем список
+            // Обновляем содержимое в зависимости от вкладки
             if (target === '#logs') {
                 refreshLogsList();
+            } else if (target === '#commands') {
+                refreshCommands();
             }
         });
     });
@@ -41,30 +42,62 @@ document.addEventListener('DOMContentLoaded', function() {
     loadConfig();
     loadFileList();
     setupLogsAutoUpdate();
+    refreshLogsList();
+    refreshCommands();
+    showLatestLog(); // Показываем последний лог при загрузке
 });
 
 async function loadConfig() {
-    const response = await fetch('/config');
-    const data = await response.json();
-    document.getElementById('aiName').value = data.AI_NAME;
-    document.getElementById('defaultCity').value = data.DEFAULT_CITY;
+    try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        
+        document.getElementById('modelPath').value = config.MODEL_PATH;
+        document.getElementById('aiName').value = config.AI_NAME;
+        document.getElementById('sampleRate').value = config.SAMPLE_RATE;
+        document.getElementById('bufferSize').value = config.BUFFER_SIZE;
+        document.getElementById('frameDuration').value = config.FRAME_DURATION_MS;
+        document.getElementById('vadMode').value = config.VAD_MODE;
+        document.getElementById('defaultCity').value = config.DEFAULT_CITY;
+        document.getElementById('defaultCurrency').value = config.DEFAULT_CURRENCY;
+        document.getElementById('restartTimeout').value = config.RESTART_TIMEOUT;
+        document.getElementById('loggingEnabled').checked = config.logging_enabled;
+    } catch (e) {
+        console.error('Ошибка при загрузке конфигурации:', e);
+    }
 }
 
 async function saveConfig() {
     const config = {
+        MODEL_PATH: document.getElementById('modelPath').value,
         AI_NAME: document.getElementById('aiName').value,
-        DEFAULT_CITY: document.getElementById('defaultCity').value
+        SAMPLE_RATE: parseInt(document.getElementById('sampleRate').value),
+        BUFFER_SIZE: parseInt(document.getElementById('bufferSize').value),
+        FRAME_DURATION_MS: parseInt(document.getElementById('frameDuration').value),
+        VAD_MODE: parseInt(document.getElementById('vadMode').value),
+        DEFAULT_CITY: document.getElementById('defaultCity').value,
+        DEFAULT_CURRENCY: document.getElementById('defaultCurrency').value,
+        RESTART_TIMEOUT: parseInt(document.getElementById('restartTimeout').value),
+        logging_enabled: document.getElementById('loggingEnabled').checked,
     };
     
     try {
-        await fetch('/config', {
+        const response = await fetch('/api/config', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(config)
         });
-        alert('Конфигурация сохранена');
+        
+        if (response.ok) {
+            alert('Конфигурация успешно сохранена');
+        } else {
+            alert('Ошибка при сохранении конфигурации');
+        }
     } catch (e) {
-        alert('Ошибка при сохранении: ' + e.message);
+        console.error('Ошибка при сохранении конфигурации:', e);
+        alert('Ошибка при сохранении конфигурации');
     }
 }
 
@@ -177,13 +210,37 @@ async function updateAdminCredentials() {
     }
 }
 
+async function showLatestLog() {
+    try {
+        const response = await fetch('/api/logs/list');
+        const data = await response.json();
+        if (data.files && data.files.length > 0) {
+            const latestLog = data.files.sort((a, b) => {
+                const dateA = a.split('.')[0];
+                const dateB = b.split('.')[0];
+                return dateB.localeCompare(dateA);
+            })[0];
+            
+            await viewLog(latestLog);
+        }
+    } catch (e) {
+        console.error('Ошибка при загрузке последнего лога:', e);
+    }
+}
+
 async function refreshLogsList() {
     try {
         const response = await fetch('/api/logs/list');
         const data = await response.json();
         const logsList = document.getElementById('logsList');
         
-        logsList.innerHTML = data.files.map(file => `
+        const sortedFiles = data.files.sort((a, b) => {
+            const dateA = a.split('.')[0];
+            const dateB = b.split('.')[0];
+            return dateB.localeCompare(dateA);
+        });
+        
+        logsList.innerHTML = sortedFiles.map(file => `
             <div class="list-group-item log-item">
                 <span>${file}</span>
                 <div class="log-actions">
@@ -196,6 +253,10 @@ async function refreshLogsList() {
                 </div>
             </div>
         `).join('');
+
+        if (sortedFiles.length > 0 && !document.getElementById('logViewer').textContent) {
+            await viewLog(sortedFiles[0]);
+        }
     } catch (e) {
         console.error('Ошибка при загрузке списка логов:', e);
     }
@@ -222,6 +283,83 @@ async function deleteLog(filename) {
     } catch (e) {
         console.error('Ошибка при удалении лога:', e);
         alert('Ошибка при удалении файла');
+    }
+}
+
+async function refreshCommands() {
+    try {
+        const response = await fetch('/api/commands');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        const commandsList = document.getElementById('commandsList');
+        
+        if (!data || !data.commands) {
+            commandsList.innerHTML = '<div class="alert alert-info">Нет добавленных команд</div>';
+            return;
+        }
+        
+        const commandsHtml = Object.entries(data.commands).map(([command, response]) => `
+            <div class="command-item">
+                <div class="command-content">
+                    <div class="command-name">${command}</div>
+                    <div class="command-response">${response}</div>
+                </div>
+                <div class="command-actions">
+                    <button class="btn btn-sm btn-danger" onclick="deleteCommand('${command}')">
+                        Удалить
+                    </button>
+                </div>
+            </div>
+        `).join('');
+        
+        commandsList.innerHTML = commandsHtml || '<div class="alert alert-info">Нет добавленных команд</div>';
+    } catch (e) {
+        console.error('Ошибка при загрузке команд:', e);
+        const commandsList = document.getElementById('commandsList');
+        commandsList.innerHTML = '<div class="alert alert-danger">Ошибка при загрузке команд</div>';
+    }
+}
+
+async function addCommand() {
+    const command = document.getElementById('newCommand').value.trim();
+    const response = document.getElementById('newResponse').value.trim();
+    
+    if (!command || !response) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+    }
+    
+    try {
+        const result = await fetch('/api/commands', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command, response })
+        });
+        
+        if (!result.ok) {
+            throw new Error(`HTTP error! status: ${result.status}`);
+        }
+        
+        document.getElementById('newCommand').value = '';
+        document.getElementById('newResponse').value = '';
+        await refreshCommands();
+    } catch (e) {
+        alert('Ошибка при добавлении команды: ' + e.message);
+    }
+}
+
+async function deleteCommand(command) {
+    if (!confirm(`Удалить команду "${command}"?`)) return;
+    
+    try {
+        await fetch(`/api/commands/${encodeURIComponent(command)}`, {
+            method: 'DELETE'
+        });
+        refreshCommands();
+    } catch (e) {
+        alert('Ошибка при удалении команды: ' + e.message);
     }
 }
 

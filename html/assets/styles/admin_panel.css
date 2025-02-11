@@ -91,3 +91,33 @@
     display: flex;
     gap: 5px;
 }
+
+.command-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+}
+
+.command-content {
+    flex: 1;
+    margin-right: 10px;
+}
+
+.command-name {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.command-response {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.command-actions {
+    display: flex;
+    gap: 5px;
+}

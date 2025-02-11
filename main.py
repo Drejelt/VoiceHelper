@@ -3,7 +3,13 @@ import io
 import json
 import logging
 import time
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Callable
+from datetime import datetime
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
+from dataclasses import dataclass
+from logging.handlers import RotatingFileHandler
 
 # Внешние библиотеки (спасибо их создателям!)
 import pygame  # Для озвучки голоса от Google
@@ -21,6 +27,7 @@ from functional_modules.entertainment import Entertainment  # Развлекал
 from functional_modules.media_controller import MediaController, MusicAction, Urls  # DJ на минималках
 from functional_modules.system_utils import SystemController, LoggerConfig  # Системный администратор в кармане
 from functional_modules.social_interactions import SocialInteractions  # Модуль для социальных взаимодействий
+from functional_modules.reminder import Reminder  # Модуль для работы с напоминаниями
 
 # Инициализируем логгер (чтобы потом понимать, где всё сломалось)
 logger_config = LoggerConfig()
@@ -77,6 +84,20 @@ class ConfigManager:
                 raise KeyError(f"Караул! Потеряли важный ключ {key}! Кто-нибудь видел его?")
 
 
+class CommandHandler:
+    def __init__(self):
+        self._handlers = {}
+        
+    def register(self, command: str, handler: Callable):
+        self._handlers[command] = handler
+        
+    async def execute(self, command: str, *args) -> Optional[str]:
+        handler = self._handlers.get(command)
+        if handler:
+            return await handler(*args)
+        return None
+
+
 class CommandProcessor:  # Переводчик с человеческого на компьютерный
     def __init__(self, config: dict, info_services: InfoServices, scheduler: Scheduler):
         self.config = config  # Настройки нашего цифрового друга
@@ -87,6 +108,11 @@ class CommandProcessor:  # Переводчик с человеческого н
         self.entertainment = Entertainment()
         self.media_controller = MediaController()
         self.system_controller = SystemController()
+
+    @lru_cache(maxsize=128)
+    def _get_command_patterns(self) -> dict:
+        """Кэширование паттернов команд для улучшения производительности"""
+        return self.commands
 
     def extract_entities(self, text: str) -> Tuple[Optional[str], Optional[List[str]], Optional[str], Optional[str], Optional[str]]:
         if self.config["AI_NAME"].lower() not in text.lower():
@@ -164,6 +190,11 @@ class CommandProcessor:  # Переводчик с человеческого н
             "выключи_компьютер": lambda t: "выключи компьютер" in t,
             "перезагрузи": lambda t: "перезагрузи" in t or "перезагрузка" in t,
             "выйти": lambda t: "выйти из системы" in t or "разлогиниться" in t,
+            "угадай_число": lambda t: "угадай число" in t or "поиграем в числа" in t,
+            "игра_число": lambda t: any(str(i) for i in range(1, 101) if str(i) in t and self.entertainment.games.number_to_guess),
+            "камень_ножницы_бумага": lambda t: "сыграем" in t and any(word in t for word in ["камень", "ножницы", "бумага"]),
+            "напомни": lambda t: "напомни" in t.lower(),
+            "покажи_напоминания": lambda t: "покажи" in t and "напоминания" in t,
         }
 
         for cmd, condition in commands.items():
@@ -171,6 +202,31 @@ class CommandProcessor:  # Переводчик с человеческого н
                 logging.info(f"Определена команда: {cmd}")
                 return cmd
         return None
+
+
+class AssistantState(Enum):
+    IDLE = "idle"
+    LISTENING = "listening"
+    PROCESSING = "processing"
+    SPEAKING = "speaking"
+
+@dataclass
+class AssistantContext:
+    state: AssistantState
+    last_command: Optional[str] = None
+    last_activity: float = time.time()
+
+
+class CustomLogger:
+    def __init__(self):
+        self.handler = RotatingFileHandler(
+            'logs/assistant.log',
+            maxBytes=1024*1024,  # 1MB
+            backupCount=5
+        )
+        self.formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
 
 
 class VoiceAssistant:  # Электронный огузок (надеюсь, не станет Скайнетом)
@@ -205,6 +261,7 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
         self.restart_timeout = self.config.get("RESTART_TIMEOUT", 30) * 60  # Конвертируем минуты в секунды
 
         self.is_running = True  # Флаг для контроля работы ассистента
+        self.reminder = Reminder()  # Создаем экземпляр класса Reminder
 
     def load_config(self):
         """Загружает конфигурацию из файла"""
@@ -371,6 +428,11 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
                         )
                         if command:
                             await self.handle_command(command, cities, money, time_alarm, standardized_text)
+
+                # Проверяем напоминания
+                reminder_notification = self.reminder.check_reminders()
+                if reminder_notification:
+                    self.speak(reminder_notification)
 
             except Exception as e:
                 logging.error(f"Аудиопоток запутался в своих битах: {e}")
@@ -585,6 +647,43 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
                         response = "Не удалось понять, какое видео вы ищете"
                         logging.warning("Пустой запрос для поиска видео")
 
+                case "угадай_число":
+                    response = self.entertainment.games.play_number_game()
+                    logging.info(f"Начата игра в угадай число: {response}")
+
+                case "игра_число":
+                    response = self.entertainment.games.play_number_game(text)
+                    logging.info(f"Ход в игре угадай число: {response}")
+
+                case "камень_ножницы_бумага":
+                    choice = next((word for word in ["камень", "ножницы", "бумага"] if word in text.lower()), None)
+                    if choice:
+                        response = self.entertainment.games.play_rock_paper_scissors(choice)
+                        logging.info(f"Игра КНБ: {response}")
+                    else:
+                        response = "Выберите: камень, ножницы или бумага!"
+
+                case "напомни":
+                    text_without_command = text.lower().replace("напомни", "").strip()
+                    time_str = self.scheduler.parse_time_from_text(text_without_command, self.config["AI_NAME"])
+                    if time_str:
+                        reminder_text = text_without_command.replace(time_str, "").strip()
+                        reminder_time = datetime.strptime(time_str, "%H:%M")
+                        today = datetime.now()
+                        reminder_datetime = datetime(
+                            today.year, today.month, today.day,
+                            reminder_time.hour, reminder_time.minute
+                        )
+                        response = self.reminder.add_reminder(reminder_text, reminder_datetime)
+                    else:
+                        response = "Не удалось распознать время напоминания"
+                    logging.info(f"Создано напоминание: {response}")
+
+                case "покажи_напоминания":
+                    response = self.reminder.get_active_reminders()
+                    logging.info("Запрошен список напоминаний")
+
+        
             if response:
                 self.speak(response)
 
@@ -597,7 +696,6 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
             self.resume_stream()
 
     def stop(self):
-        """Остановка ассистента"""
         self.is_running = False
         if hasattr(self, 'stream'):
             self.stream.stop_stream()
@@ -607,3 +705,9 @@ class VoiceAssistant:  # Электронный огузок (надеюсь, н
         pygame.mixer.quit()  # Освобождаем ресурсы pygame
         self.tts_engine.stop()  # Останавливаем движок TTS
         logging.info("Ассистент остановлен")
+
+    async def _process_heavy_task(self, func, *args):
+        """Выполнение тяжелых задач в отдельном потоке"""
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            return await loop.run_in_executor(pool, func, *args)
