@@ -1,7 +1,10 @@
+import os
+
 from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+os.makedirs("html/database", exist_ok=True)
 DATABASE_URL = "sqlite:///./html/database/voice_assistant.db"
 
 engine = create_engine(

@@ -1,6 +1,9 @@
 import logging
 import os
 import json
+import subprocess
+from pathlib import Path
+
 import pyautogui
 from datetime import datetime
 
@@ -8,16 +11,28 @@ class SystemController:
     def __init__(self):
         self.log_dir = "logs"
 
+    def _power_commands_allowed(self) -> bool:
+        return os.getenv("ALLOW_POWER_COMMANDS", "0").lower() in {"1", "true", "yes"}
+
     def shutdown(self) -> str:
-        os.system("shutdown -h now")
+        if not self._power_commands_allowed():
+            return "Команды питания отключены. Чтобы разрешить, задайте ALLOW_POWER_COMMANDS=1"
+        subprocess.run(["shutdown", "-h", "now"], check=False)
         return "Выключаю компьютер..."
 
     def restart(self) -> str:
-        os.system("reboot")
+        if not self._power_commands_allowed():
+            return "Команды питания отключены. Чтобы разрешить, задайте ALLOW_POWER_COMMANDS=1"
+        subprocess.run(["reboot"], check=False)
         return "Перезагружаю компьютер..."
 
     def logout(self) -> str:
-        os.system("pkill -KILL -u $USER")
+        if not self._power_commands_allowed():
+            return "Команды питания отключены. Чтобы разрешить, задайте ALLOW_POWER_COMMANDS=1"
+        user = os.environ.get("USER")
+        if not user:
+            return "Не удалось определить пользователя для выхода из системы"
+        subprocess.run(["pkill", "-KILL", "-u", user], check=False)
         return "Выхожу из системы..."
 
     def take_screenshot(self) -> str:
@@ -37,10 +52,21 @@ class SystemController:
             logging.error(f"Ошибка при получении списка логов: {e}")
             return []
 
+    def _safe_log_path(self, filename: str) -> Path | None:
+        if Path(filename).name != filename or not filename.endswith(".log"):
+            return None
+        log_dir = Path(self.log_dir).resolve()
+        path = (log_dir / filename).resolve()
+        try:
+            path.relative_to(log_dir)
+        except ValueError:
+            return None
+        return path
+
     def read_log_file(self, filename: str) -> str:
         try:
-            file_path = os.path.join(self.log_dir, filename)
-            if not os.path.exists(file_path):
+            file_path = self._safe_log_path(filename)
+            if file_path is None or not file_path.exists():
                 return "Файл не найден"
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -50,8 +76,8 @@ class SystemController:
 
     def delete_log_file(self, filename: str) -> bool:
         try:
-            file_path = os.path.join(self.log_dir, filename)
-            if not os.path.exists(file_path):
+            file_path = self._safe_log_path(filename)
+            if file_path is None or not file_path.exists():
                 return False
             os.remove(file_path)
             return True

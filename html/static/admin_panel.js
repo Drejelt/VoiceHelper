@@ -133,9 +133,18 @@ async function loadFileList() {
     const response = await fetch('/api/files');
     const data = await response.json();
     const fileList = document.getElementById('fileList');
-    fileList.innerHTML = data.files.map(file => 
-        `<a class="list-group-item list-group-item-action" onclick="loadFile('${file}')">${file}</a>`
-    ).join('');
+    fileList.replaceChildren();
+    (data.files || []).forEach(file => {
+        const link = document.createElement('a');
+        link.className = 'list-group-item list-group-item-action';
+        link.href = '#';
+        link.textContent = file;
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            loadFile(file);
+        });
+        fileList.appendChild(link);
+    });
 }
 
 async function loadFile(filename) {
@@ -185,6 +194,10 @@ async function updateAdminCredentials() {
     
     if (!newUsername || !newPassword) {
         alert('Пожалуйста, заполните все поля');
+        return;
+    }
+    if (newPassword.length < 8) {
+        alert('Пароль должен быть не короче 8 символов');
         return;
     }
     
@@ -240,19 +253,31 @@ async function refreshLogsList() {
             return dateB.localeCompare(dateA);
         });
         
-        logsList.innerHTML = sortedFiles.map(file => `
-            <div class="list-group-item log-item">
-                <span>${file}</span>
-                <div class="log-actions">
-                    <button class="btn btn-sm btn-primary" onclick="viewLog('${file}')">
-                        Просмотр
-                    </button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteLog('${file}')">
-                        Удалить
-                    </button>
-                </div>
-            </div>
-        `).join('');
+        logsList.replaceChildren();
+        sortedFiles.forEach(file => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item log-item';
+
+            const name = document.createElement('span');
+            name.textContent = file;
+
+            const actions = document.createElement('div');
+            actions.className = 'log-actions';
+
+            const viewBtn = document.createElement('button');
+            viewBtn.className = 'btn btn-sm btn-primary';
+            viewBtn.textContent = 'Просмотр';
+            viewBtn.addEventListener('click', () => viewLog(file));
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-sm btn-danger';
+            deleteBtn.textContent = 'Удалить';
+            deleteBtn.addEventListener('click', () => deleteLog(file));
+
+            actions.append(viewBtn, deleteBtn);
+            item.append(name, actions);
+            logsList.appendChild(item);
+        });
 
         if (sortedFiles.length > 0 && !document.getElementById('logViewer').textContent) {
             await viewLog(sortedFiles[0]);
@@ -264,7 +289,7 @@ async function refreshLogsList() {
 
 async function viewLog(filename) {
     try {
-        const response = await fetch(`/api/logs/view/${filename}`);
+        const response = await fetch(`/api/logs/view/${encodeURIComponent(filename)}`);
         const data = await response.json();
         const logViewer = document.getElementById('logViewer');
         logViewer.textContent = data.content;
@@ -278,7 +303,7 @@ async function deleteLog(filename) {
     if (!confirm(`Удалить файл ${filename}?`)) return;
     
     try {
-        await fetch(`/api/logs/delete/${filename}`, { method: 'DELETE' });
+        await fetch(`/api/logs/delete/${encodeURIComponent(filename)}`, { method: 'DELETE' });
         refreshLogsList();
     } catch (e) {
         console.error('Ошибка при удалении лога:', e);
@@ -300,21 +325,42 @@ async function refreshCommands() {
             return;
         }
         
-        const commandsHtml = Object.entries(data.commands).map(([command, response]) => `
-            <div class="command-item">
-                <div class="command-content">
-                    <div class="command-name">${command}</div>
-                    <div class="command-response">${response}</div>
-                </div>
-                <div class="command-actions">
-                    <button class="btn btn-sm btn-danger" onclick="deleteCommand('${command}')">
-                        Удалить
-                    </button>
-                </div>
-            </div>
-        `).join('');
-        
-        commandsList.innerHTML = commandsHtml || '<div class="alert alert-info">Нет добавленных команд</div>';
+        const entries = Object.entries(data.commands);
+        if (!entries.length) {
+            commandsList.innerHTML = '<div class="alert alert-info">Нет добавленных команд</div>';
+            return;
+        }
+
+        commandsList.replaceChildren();
+        entries.forEach(([command, responseText]) => {
+            const item = document.createElement('div');
+            item.className = 'command-item';
+
+            const content = document.createElement('div');
+            content.className = 'command-content';
+
+            const name = document.createElement('div');
+            name.className = 'command-name';
+            name.textContent = command;
+
+            const responseEl = document.createElement('div');
+            responseEl.className = 'command-response';
+            responseEl.textContent = responseText;
+
+            content.append(name, responseEl);
+
+            const actions = document.createElement('div');
+            actions.className = 'command-actions';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-sm btn-danger';
+            deleteBtn.textContent = 'Удалить';
+            deleteBtn.addEventListener('click', () => deleteCommand(command));
+
+            actions.appendChild(deleteBtn);
+            item.append(content, actions);
+            commandsList.appendChild(item);
+        });
     } catch (e) {
         console.error('Ошибка при загрузке команд:', e);
         const commandsList = document.getElementById('commandsList');
