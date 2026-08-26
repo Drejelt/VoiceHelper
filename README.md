@@ -1,60 +1,253 @@
-# Голосовой Ассистент с Веб-Панелью Управления
+# VoiceHelper
 
-Голосовой помощник на русском языке с веб-интерфейсом, который готов выполнять ваши команды (в разумных пределах, конечно).
+> A local Russian-language desktop voice assistant with a FastAPI control panel. Speech is recognized on-device with Vosk; the panel binds localhost only.
 
-## Что умеет этот цифровой огузок?
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-blue)
+![Language](https://img.shields.io/badge/language-python3.10+-green)
+![STT](https://img.shields.io/badge/stt-vosk-orange)
+![Panel](https://img.shields.io/badge/panel-localhost%20only-lightgrey)
 
-- 🎤 Понимать русский язык
-- 🌐 Путешествовать по интернету
-- 🔊 Говорить голосом навигатора (и робота)
-- 🌡️ Подрабатывать метеорологом (спойлер: опять дождь)
-- 💰 Смотреть на курсы валют (вам лучше туда не смотреть)
-- 🎵 Включать музыку (на случай если захотите заняться уборкой)
-- 📰 Открывать новостные сайты
-- ⏰ Будить вас по утрам (извините заранее)
-- 📚 Копаться в Википедии (умничка такой!)
-- 😄 Шутить шутки (местами даже смешные)
-- 📖 Сочиняет сказки (спойлер: дракон всегда добрый)
-- 🔍 Искать видосики на YouTube
+VoiceHelper listens on a wake word, maps Russian speech to a fixed set of desktop and info commands, and speaks the result. A small web panel on `127.0.0.1:8000` edits config, JSON state, and logs. Cloud APIs are used only where a local equivalent is not wired in — weather, Gemini fairy tales, and gTTS.
 
+This is a personal project, not a product. Treat the panel as a local admin surface, not something to publish.
 
-## 🛠️ Системные требования
+---
 
-- Python 3.10+
-- Куча пакетов из requirements.txt (листайте и плачьте)
-- Модель Vosk для русского языка
-- Работающий микрофон
-- API ключи для сказок и погоды (GOOGLE GEMINI и OPEN WEATHER)
+## Contents
 
-## Как установить это чудо-юдо?
+- [Why](#why)
+- [Architecture](#architecture)
+- [Security model](#security-model)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Voice commands](#voice-commands)
+- [Configuration](#configuration)
+- [Admin panel](#admin-panel)
+- [File layout](#file-layout)
+- [Known gaps](#known-gaps)
+- [Troubleshooting](#troubleshooting)
 
-1. Для пользователей Linux:
+---
 
-        sudo apt-get update
-        sudo apt-get install python3-dev portaudio19-dev python3-pyaudio xdotool
-2. Для владельцев Mac (да, я и о вас подумали):
+## Why
 
-        brew install portaudio
-        pip install pyaudio
-3. Установка зависимостей:
+Cloud voice assistants are easy, but they take the microphone off the machine and they are not built to drive *this* desktop — tabs, volume, alarms, shutdown. VoiceHelper keeps STT local (Vosk + WebRTC VAD), keeps the control plane on loopback, and lets you change the wake word and defaults from a browser on the same host.
 
-        pip install -r requirements.txt
-4. Устанавливаем языковую модель spacy:
+The panel exists because a JSON file you have to edit by hand is how these projects rot. Config, alarms, reminders, custom command text, and logs are reachable from one place — behind HTTP Basic, and only from localhost.
 
-        python3 -m spacy download ru_core_news_sm
-5. Создаём папку model и помещаем туда русскую модель Vosk:
-         
-         /model/vosk-model-small-ru-0.22
-6. Создаём папку sounds и кладём туда файл будильника:
+---
 
-         /sounds/alarm.mp3
-7. Создаём файл api_keys.env и прописываем ключи:
+## Architecture
 
-            WEATHER_API=YOUR_API_KEY
-            GOOGLE_API_KEY=YOUR_API_KEY
-8. Запускаем при помощи терминала и знаний древних аннунаков:
-         
-         uvicorn control:app --reload
-9. Заходим в панель управления (логин/пароль: admin/admin):
-         
-         http://localhost:8000/
+```
+microphone
+    │
+    ▼
+┌──────────┐    ┌───────────┐    ┌──────────────────┐
+│ PyAudio  │ ─► │ webrtcvad │ ─► │ Vosk (local STT) │
+└──────────┘    └───────────┘    └────────┬─────────┘
+                                          │ wake word + keywords
+                                          ▼
+                                   CommandProcessor
+                                          │
+         ┌────────────┬─────────────┬─────┴──────┬──────────────┐
+         ▼            ▼             ▼            ▼              ▼
+   InfoServices  Scheduler   MediaController  SystemCtrl   Entertainment
+   weather/wiki  alarms      browser/hotkeys  screenshot   jokes/Gemini
+         │
+         ▼
+   gTTS / pyttsx3  ──► speaker
+
+127.0.0.1:8000   FastAPI + HTTP Basic  ──►  admin panel
+```
+
+The assistant process and the panel share one Python runtime: `uvicorn` loads `control:app`, which starts `VoiceAssistant` on a background thread. There is no separate daemon.
+
+---
+
+## Security model
+
+The panel can rewrite config and read logs, so the default is deny-from-the-network:
+
+- **Loopback only.** Requests whose peer is not `127.0.0.1` / `::1` get `403`. Binding `0.0.0.0` does not make the panel reachable.
+- **HTTP Basic on every API route**, including files, logs, commands, and restart — not only `/admin`.
+- **Passwords are bcrypt.** A leftover `admin`/`admin` hash from older checkouts is rotated on startup. Set `ADMIN_PASSWORD` or read the generated password from the log.
+- **No secrets in git.** API keys live in `api_keys.env`. The SQLite user DB and the old `credentials.json` are gitignored.
+- **Path allowlists.** JSON edits are restricted to four filenames under `json/`. Log view/delete only accepts `*.log` basenames under `logs/`.
+- **Power commands are off.** Shutdown, reboot, and logout via voice require `ALLOW_POWER_COMMANDS=1`.
+
+> Known gap: media control still injects keystrokes with pyautogui into whatever window is focused, including Alt+F4. HTTP Basic over HTTP is acceptable only because the socket is loopback. There is no session, CSRF token, or rate limit.
+
+---
+
+## Requirements
+
+| | |
+|---|---|
+| OS | Linux (tested) or macOS |
+| Python | 3.10+ |
+| Hardware | a working microphone |
+| STT model | [Vosk `vosk-model-small-ru-0.22`](https://alphacephei.com/vosk/models) unpacked under `model/` |
+| Optional keys | OpenWeather (`WEATHER_API`), Gemini (`GOOGLE_API_KEY`) |
+| Linux packages | `python3-dev`, `portaudio19-dev`, `python3-pyaudio`, `xdotool` |
+
+---
+
+## Quick start
+
+Linux packages:
+
+```bash
+sudo apt-get update
+sudo apt-get install python3-dev portaudio19-dev python3-pyaudio xdotool
+```
+
+macOS:
+
+```bash
+brew install portaudio
+pip install pyaudio
+```
+
+Then:
+
+```bash
+pip install -r requirements.txt
+python3 -m spacy download ru_core_news_sm
+
+mkdir -p model sounds
+# unpack vosk-model-small-ru-0.22 into model/vosk-model-small-ru-0.22
+# put an alarm.mp3 into sounds/
+
+cp .env.example api_keys.env
+# fill WEATHER_API, GOOGLE_API_KEY, ADMIN_PASSWORD
+
+uvicorn control:app --host 127.0.0.1 --port 8000
+```
+
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). Login is `admin`. The password is `ADMIN_PASSWORD`, or the one-time value printed at first start if that variable is empty.
+
+Do not pass `--host 0.0.0.0`. The loopback check will reject non-local peers anyway.
+
+---
+
+## Voice commands
+
+The wake word is `AI_NAME` in `json/model_config.json` (default `шут`). Utterances that do not contain it are ignored.
+
+| Area | Examples |
+|---|---|
+| Time / alarms / reminders | текущее время; поставь будильник на 7:30; напомни …; покажи напоминания |
+| Info | погода в …; курс доллара; что такое … / википедия |
+| Browser / media | открой ютуб; включи музыку; найди видео …; пауза; громче; полный экран |
+| Desktop | скриншот; выключи компьютер; перезагрузи; выйти из системы |
+| Talk | привет; шутка; сказку; брось монетку |
+
+Desktop power commands do nothing unless `ALLOW_POWER_COMMANDS=1`. Media actions are YouTube-oriented hotkeys sent to the focused window.
+
+Custom phrases stored in the panel (`json/custom_commands.json`) are **not** executed by the voice loop yet — they are only edited there.
+
+---
+
+## Configuration
+
+Runtime knobs live in `json/model_config.json`. The panel's config form writes the same file.
+
+```json
+{
+  "MODEL_PATH": "model/vosk-model-small-ru-0.22",
+  "AI_NAME": "шут",
+  "SAMPLE_RATE": 16000,
+  "BUFFER_SIZE": 4000,
+  "FRAME_DURATION_MS": 20,
+  "VAD_MODE": 3,
+  "DEFAULT_CITY": "киев",
+  "DEFAULT_CURRENCY": "UAH",
+  "RESTART_TIMEOUT": 30,
+  "logging_enabled": true
+}
+```
+
+Secrets are not in that file:
+
+```
+# api_keys.env  (gitignored; start from .env.example)
+WEATHER_API=
+GOOGLE_API_KEY=
+ADMIN_PASSWORD=
+ALLOW_POWER_COMMANDS=0
+```
+
+`RESTART_TIMEOUT` is idle minutes after which the audio stack is torn down and reopened. Alarms and reminders are separate JSON files, not the SQLite DB — SQLite is only the admin user.
+
+---
+
+## Admin panel
+
+`GET /` and `GET /admin` both require Basic auth and then serve the dashboard.
+
+| Route | Purpose |
+|---|---|
+| `/config`, `/api/config` | Read / write `model_config.json` |
+| `/api/files/{filename}` | Read / write allowlisted JSON under `json/` |
+| `/api/commands` | Edit `custom_commands.json` |
+| `/api/logs/list`, `/view`, `/delete` | Daily log files under `logs/` |
+| `/api/restart` | Reload assistant config |
+| `/api/update_credentials` | Change admin username and password (min 8 chars) |
+
+Changing credentials does not rewrite `api_keys.env`; `ADMIN_PASSWORD` is only the bootstrap value.
+
+---
+
+## File layout
+
+| Path | Purpose |
+|------|---------|
+| `control.py` | FastAPI app, auth, file/log API |
+| `main.py` | Capture, VAD, STT, command dispatch, TTS |
+| `models.py` | SQLite user table (`html/database/voice_assistant.db`) |
+| `functional_modules/` | Weather, media, scheduler, entertainment, system |
+| `json/model_config.json` | Wake word, Vosk path, defaults |
+| `json/alarms.json`, `json/reminders.json` | Scheduler state |
+| `json/custom_commands.json` | Panel-edited phrases (not wired to STT) |
+| `html/templates/`, `html/static/` | Admin UI |
+| `api_keys.env` | Secrets (gitignored) |
+| `model/` | Vosk model (gitignored) |
+| `sounds/alarm.mp3` | Alarm clip (gitignored) |
+| `logs/` | Rotating / daily logs (gitignored) |
+
+---
+
+## Known gaps
+
+Boundaries, not a feature list:
+
+- **Custom commands are storage-only.** The panel writes `custom_commands.json`; `CommandProcessor` never reads it.
+- **Matching is keyword soup.** spaCy is used for some entities; most intents are `if "погода" in text`. Overlapping phrases win by dict order.
+- **gTTS needs the network.** pyttsx3 is the fallback and often sounds worse.
+- **No test suite.** `requirements.txt` is pinned loosely; Gemini model names drift.
+
+---
+
+## Troubleshooting
+
+**401 on every panel request.**
+The browser has no Basic credentials, or you are still using `admin`/`admin` after a rotation. Check the startup log for the generated password, or set `ADMIN_PASSWORD` and remove the user row so it can be recreated.
+
+**403 from another machine.**
+Expected. The panel refuses non-loopback peers. Use SSH local forwarding if you must reach it remotely: `ssh -L 8000:127.0.0.1:8000 host`.
+
+**"API ключ от погоды потерялся" / fairy tales fail.**
+`api_keys.env` is missing, unreadable, or the names are not `WEATHER_API` / `GOOGLE_API_KEY`. The file is loaded from the repo root, not from `functional_modules/`.
+
+**Vosk fails at startup.**
+`MODEL_PATH` must point at an unpacked model directory, typically `model/vosk-model-small-ru-0.22`, not the zip.
+
+**Alarm is silent.**
+`sounds/alarm.mp3` is required by `Scheduler`. The path is not configurable yet.
+
+**"Выключи компьютер" does nothing.**
+`ALLOW_POWER_COMMANDS` is `0`. Set it to `1` only if you actually want voice-triggered shutdown.
+
+**Panel config form does not save.**
+The UI talks to `/api/config`, which is an alias of `/config` and requires the same Basic auth the browser already stored for `/admin`.
