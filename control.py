@@ -42,6 +42,9 @@ class Config(BaseModel):
     DEFAULT_CURRENCY: str = "UAH"
     RESTART_TIMEOUT: int = 30
     logging_enabled: bool = True
+    LLM_ENABLED: bool = True
+    LLM_MODEL: str = "gemini-2.0-flash"
+    LLM_TIMEOUT_SEC: float = 3.0
 
 
 class CredentialUpdate(BaseModel):
